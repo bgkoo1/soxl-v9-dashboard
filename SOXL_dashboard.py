@@ -1037,7 +1037,9 @@ def get_v9_quantity_overrides(open_positions, fx_daily=None, fallback_fx=None):
     if not isinstance(stored, dict):
         stored = {}
 
-    active = {}
+    # 과거에 청산된 티어의 실제 수량도 Trades에서 계속 사용해야 하므로
+    # 저장 맵 전체를 유지하고, 현재 열린 슬롯만 기본값을 보충합니다.
+    merged = dict(stored)
     for pos in open_positions or []:
         key = v9_position_key(pos)
         entry_date = pd.Timestamp(pos["entry_date"]).normalize()
@@ -1049,15 +1051,15 @@ def get_v9_quantity_overrides(open_positions, fx_daily=None, fallback_fx=None):
             if entry_fx is not None and entry_fx > 0 and entry_price > 0
             else 0
         )
-        saved_qty = stored.get(key, strategy_qty)
+        saved_qty = merged.get(key, strategy_qty)
         try:
             saved_qty = max(1, int(round(float(saved_qty))))
         except (TypeError, ValueError):
             saved_qty = max(1, strategy_qty)
-        active[key] = saved_qty
+        merged[key] = saved_qty
 
-    st.session_state["v9_quantity_overrides"] = active
-    return active
+    st.session_state["v9_quantity_overrides"] = merged
+    return merged
 
 
 def calculate_v9_actual_portfolio(
@@ -3359,62 +3361,6 @@ def render_compact_trading_dashboard():
 
     if strategy_mode.startswith("V9"):
         v9_open_positions = live_result.get("open_positions", [])
-        if v9_open_positions:
-            with st.expander("✏️ 실제 보유수량 수정", expanded=False):
-                st.caption(
-                    "전략 기준수량과 실제 주문수량이 다르면 ‘실제 보유수량’을 수정한 뒤 적용하세요. "
-                    "수정값은 실전 NAV·현금·평가손익·다음 매수금액에 반영되며 백테스트 성과에는 영향을 주지 않습니다."
-                )
-                editor_df = build_v9_quantity_editor_rows(
-                    v9_open_positions,
-                    v9_quantity_overrides,
-                    fx_daily=v9_fx_daily,
-                    fallback_fx=portfolio_fallback_fx,
-                )
-                edited_df = st.data_editor(
-                    editor_df.drop(columns=["_key"]),
-                    hide_index=True,
-                    use_container_width=True,
-                    disabled=["슬롯", "매수일", "매수가", "전략 기준수량"],
-                    column_config={
-                        "실제 보유수량": st.column_config.NumberColumn(
-                            "실제 보유수량", min_value=1, step=1, format="%d주"
-                        ),
-                    },
-                    key="v9_actual_quantity_editor",
-                )
-                ec1, ec2 = st.columns([1, 1])
-                if ec1.button("✅ 수정 수량 적용·영구저장", use_container_width=True, key="apply_v9_qty"):
-                    new_map = {}
-                    for i, row in edited_df.iterrows():
-                        key = editor_df.iloc[i]["_key"]
-                        new_map[key] = max(1, int(round(float(row["실제 보유수량"]))))
-                    st.session_state["v9_quantity_overrides"] = new_map
-                    ok, msg = save_persisted_v9_quantities(new_map)
-                    st.session_state["v9_quantity_persistence_status"] = msg
-                    st.session_state["v9_quantity_persistence_ok"] = ok
-                    st.rerun()
-                if ec2.button("↩️ 전략 기준수량으로 복원·영구저장", use_container_width=True, key="reset_v9_qty"):
-                    default_map = {}
-                    for _, row in editor_df.iterrows():
-                        default_map[row["_key"]] = max(1, int(row["전략 기준수량"]))
-                    st.session_state["v9_quantity_overrides"] = default_map
-                    ok, msg = save_persisted_v9_quantities(default_map)
-                    st.session_state["v9_quantity_persistence_status"] = msg
-                    st.session_state["v9_quantity_persistence_ok"] = ok
-                    st.rerun()
-
-                persistence_msg = st.session_state.get("v9_quantity_persistence_status", "")
-                if portfolio_persistence_enabled():
-                    if st.session_state.get("v9_quantity_persistence_ok") is False:
-                        st.error(f"☁️ 영구저장 오류 · {persistence_msg}")
-                    else:
-                        st.success(f"🔐 영구저장 연결됨 · {persistence_msg or 'GitHub 암호화 저장소 사용'}")
-                else:
-                    st.warning(
-                        "현재는 세션 저장만 사용 중입니다. Streamlit Secrets에 GITHUB_TOKEN과 "
-                        "PORTFOLIO_ENCRYPTION_KEY를 설정하면 재시작 후에도 실제 수량이 유지됩니다."
-                    )
 
     st.subheader("📦 Open Positions(현재 보유 슬롯)")
 
@@ -3469,18 +3415,107 @@ def render_compact_trading_dashboard():
             "평가손익", "MOC 예정일", "남은 거래일", "상태",
         ]
         position_table = position_table[[c for c in preferred_cols if c in position_table.columns]]
-        st.dataframe(
-            position_table,
+
+        # 보유수량은 Open Positions 표에서 직접 수정합니다.
+        editor_table = position_table.copy()
+        editor_table["보유수량"] = (
+            editor_table["보유수량"]
+            .astype(str)
+            .str.replace("주", "", regex=False)
+            .str.replace(",", "", regex=False)
+            .pipe(pd.to_numeric, errors="coerce")
+            .fillna(1)
+            .round()
+            .astype(int)
+        )
+
+        # 현재 미국 동부 날짜(ET)가 MOC 예정일이면 해당 두 셀을 강조합니다.
+        # 예: 미국 9/2 MOC 예정일은 한국시간 기준 서머타임 시 9/2 13:00부터 강조됩니다.
+        access_us_date = datetime.now(ZoneInfo("America/New_York")).date()
+        access_date_text = access_us_date.isoformat()
+
+        def _highlight_moc_today(data):
+            styles = pd.DataFrame("", index=data.index, columns=data.columns)
+            if "MOC 예정일" in data.columns and "남은 거래일" in data.columns:
+                due_mask = data["MOC 예정일"].astype(str).str.startswith(access_date_text)
+                styles.loc[due_mask, "MOC 예정일"] = (
+                    "background-color: #fff1a8; color: #7a4b00; font-weight: 800;"
+                )
+                styles.loc[due_mask, "남은 거래일"] = (
+                    "background-color: #fff1a8; color: #7a4b00; font-weight: 800;"
+                )
+            return styles
+
+        styled_editor = editor_table.style.apply(_highlight_moc_today, axis=None)
+        edited_positions = st.data_editor(
+            styled_editor,
             use_container_width=True,
             hide_index=True,
+            disabled=[c for c in editor_table.columns if c != "보유수량"],
             column_config={
                 "LOC 모드": st.column_config.TextColumn("🔎 현재 LOC 모드", width="large"),
                 "LOC 주문가": st.column_config.TextColumn("🎯 LOC 주문가", width="medium"),
-                "보유수량": st.column_config.TextColumn("보유수량", width="medium"),
+                "보유수량": st.column_config.NumberColumn(
+                    "✏️ 실제 보유수량", min_value=1, step=1, format="%d주", width="medium"
+                ),
                 "적용환율": st.column_config.TextColumn("적용환율", width="medium"),
                 "매수금액": st.column_config.TextColumn("매수금액", width="medium"),
             },
+            key="v9_open_positions_editor",
         )
+
+        save_c1, save_c2 = st.columns([1, 1])
+        if save_c1.button(
+            "💾 보유수량 변경 저장",
+            use_container_width=True,
+            key="save_v9_open_qty_inline",
+        ):
+            merged_map = dict(st.session_state.get("v9_quantity_overrides", {}))
+            key_by_slot = {
+                i: v9_position_key(pos)
+                for i, pos in enumerate(v9_open_positions or [], start=1)
+            }
+            for _, row in edited_positions.iterrows():
+                slot_no = int(row["슬롯"])
+                key = key_by_slot.get(slot_no)
+                if key:
+                    merged_map[key] = max(1, int(round(float(row["보유수량"]))))
+            st.session_state["v9_quantity_overrides"] = merged_map
+            ok, msg = save_persisted_v9_quantities(merged_map)
+            st.session_state["v9_quantity_persistence_status"] = msg
+            st.session_state["v9_quantity_persistence_ok"] = ok
+            st.rerun()
+
+        if save_c2.button(
+            "↩️ 현재 슬롯 전략 기준수량으로 복원",
+            use_container_width=True,
+            key="reset_v9_open_qty_inline",
+        ):
+            merged_map = dict(st.session_state.get("v9_quantity_overrides", {}))
+            for pos in v9_open_positions or []:
+                key = v9_position_key(pos)
+                entry_date = pd.Timestamp(pos["entry_date"]).normalize()
+                entry_price = float(pos["entry_price"])
+                invested = float(pos["invested"])
+                entry_fx = lookup_entry_fx(entry_date, v9_fx_daily, portfolio_fallback_fx)
+                if entry_fx is not None and entry_fx > 0 and entry_price > 0:
+                    merged_map[key] = max(1, int(round(invested / (entry_price * entry_fx))))
+            st.session_state["v9_quantity_overrides"] = merged_map
+            ok, msg = save_persisted_v9_quantities(merged_map)
+            st.session_state["v9_quantity_persistence_status"] = msg
+            st.session_state["v9_quantity_persistence_ok"] = ok
+            st.rerun()
+
+        persistence_msg = st.session_state.get("v9_quantity_persistence_status", "")
+        if portfolio_persistence_enabled():
+            if st.session_state.get("v9_quantity_persistence_ok") is False:
+                st.error(f"☁️ 영구저장 오류 · {persistence_msg}")
+            else:
+                st.caption(f"🔐 실제 보유수량 영구저장 연결됨 · {persistence_msg or 'GitHub 암호화 저장소 사용'}")
+        else:
+            st.warning(
+                "현재는 세션 저장만 사용 중입니다. Streamlit Secrets의 GitHub/암호화 설정을 확인하세요."
+            )
     else:
         st.dataframe(
             position_table,
@@ -4550,6 +4585,41 @@ with tab6:
     display_trades["매도일"] = pd.to_datetime(display_trades["Exit_Date"]).dt.date
     display_trades["매수가"] = display_trades["Entry_Price"].map(lambda x: f"${x:,.2f}")
     display_trades["매도가"] = display_trades["Exit_Price"].map(lambda x: f"${x:,.2f}")
+
+    # V9은 실제 저장 수량을 Trades까지 이어서 표시합니다.
+    # 저장값이 없는 과거 티어는 매수일 환율을 이용한 전략 기준 정수수량을 표시합니다.
+    if strategy_mode.startswith("V9") and not display_trades.empty:
+        trade_start = pd.to_datetime(display_trades["Entry_Date"]).min()
+        trade_end = pd.to_datetime(display_trades["Entry_Date"]).max()
+        trades_fx_daily = get_usdkrw_daily_rates(trade_start, trade_end)
+        qty_map_for_trades = st.session_state.get("v9_quantity_overrides", {})
+
+        def _trade_qty(row):
+            pseudo_pos = {
+                "entry_date": pd.Timestamp(row["Entry_Date"]),
+                "entry_price": float(row["Entry_Price"]),
+            }
+            key = v9_position_key(pseudo_pos)
+            if key in qty_map_for_trades:
+                try:
+                    return max(1, int(round(float(qty_map_for_trades[key]))))
+                except (TypeError, ValueError):
+                    pass
+            entry_date = pd.Timestamp(row["Entry_Date"]).normalize()
+            entry_price = float(row["Entry_Price"])
+            invested = float(row["Invested"])
+            entry_fx = lookup_entry_fx(entry_date, trades_fx_daily, portfolio_fallback_fx)
+            if entry_fx is not None and entry_fx > 0 and entry_price > 0:
+                return max(1, int(round(invested / (entry_price * entry_fx))))
+            return None
+
+        display_trades["수량"] = display_trades.apply(_trade_qty, axis=1)
+        display_trades["수량"] = display_trades["수량"].map(
+            lambda x: f"{int(x):,}주" if pd.notna(x) else "계산 불가"
+        )
+    else:
+        # V7/V8 등 기존 전략은 엔진의 합성 shares를 실주식 수량으로 오해하지 않도록 표시하지 않습니다.
+        display_trades["수량"] = "-"
     if "Active_Target_Price" in display_trades.columns:
         target_series = display_trades["Active_Target_Price"]
     elif "Target_Price" in display_trades.columns:
@@ -4569,6 +4639,7 @@ with tab6:
         "매수가",
         "매도가",
         "목표 매도가",
+        "수량",
         "투자금",
         "수익률",
         "손익",
