@@ -786,6 +786,122 @@ def build_open_positions_table(trades_df, current_close, as_of_date, holding_day
     return pd.DataFrame(rows)
 
 
+
+def v9_position_key(pos):
+    """현재 슬롯을 수량 오버라이드와 연결하기 위한 안정적인 키."""
+    d = pd.Timestamp(pos["entry_date"]).normalize().date().isoformat()
+    px = float(pos["entry_price"])
+    return f"{d}|{px:.6f}"
+
+
+def get_v9_quantity_overrides(open_positions, fx_daily=None, fallback_fx=None):
+    """세션에 저장된 실제 보유수량을 정리하고, 새 슬롯에는 전략 기준 정수수량을 채웁니다."""
+    stored = st.session_state.get("v9_quantity_overrides", {})
+    if not isinstance(stored, dict):
+        stored = {}
+
+    active = {}
+    for pos in open_positions or []:
+        key = v9_position_key(pos)
+        entry_date = pd.Timestamp(pos["entry_date"]).normalize()
+        entry_price = float(pos["entry_price"])
+        invested = float(pos["invested"])
+        entry_fx = lookup_entry_fx(entry_date, fx_daily, fallback_fx)
+        strategy_qty = (
+            int(round(invested / (entry_price * entry_fx)))
+            if entry_fx is not None and entry_fx > 0 and entry_price > 0
+            else 0
+        )
+        saved_qty = stored.get(key, strategy_qty)
+        try:
+            saved_qty = max(1, int(round(float(saved_qty))))
+        except (TypeError, ValueError):
+            saved_qty = max(1, strategy_qty)
+        active[key] = saved_qty
+
+    st.session_state["v9_quantity_overrides"] = active
+    return active
+
+
+def calculate_v9_actual_portfolio(
+    open_positions,
+    model_cash,
+    confirmed_close,
+    qty_overrides,
+    fx_daily=None,
+    fallback_fx=None,
+):
+    """
+    전략상 매수금액과 실제 입력수량의 차이를 현금에 되돌려 실제 운용 NAV를 계산합니다.
+    백테스트 엔진 자체는 수정하지 않고, 실전 포트폴리오 스냅샷만 보정합니다.
+    """
+    adjusted_cash = float(model_cash)
+    confirmed_position_value = 0.0
+    rows = []
+
+    for pos in open_positions or []:
+        key = v9_position_key(pos)
+        entry_date = pd.Timestamp(pos["entry_date"]).normalize()
+        entry_price = float(pos["entry_price"])
+        model_invested = float(pos["invested"])
+        entry_fx = lookup_entry_fx(entry_date, fx_daily, fallback_fx)
+
+        if entry_fx is None or entry_fx <= 0 or entry_price <= 0:
+            actual_qty = None
+            actual_invested = model_invested
+        else:
+            strategy_qty = int(round(model_invested / (entry_price * entry_fx)))
+            actual_qty = int(qty_overrides.get(key, max(1, strategy_qty)))
+            actual_invested = actual_qty * entry_price * entry_fx
+
+        # 전략 계획금액보다 덜 샀으면 현금이 늘고, 더 샀으면 현금이 줄어듭니다.
+        adjusted_cash += model_invested - actual_invested
+        confirmed_value = actual_invested * float(confirmed_close) / entry_price
+        confirmed_position_value += confirmed_value
+
+        rows.append({
+            "Key": key,
+            "Entry_Date": entry_date,
+            "Entry_Price": entry_price,
+            "Entry_FX": entry_fx,
+            "Model_Invested": model_invested,
+            "Actual_Qty": actual_qty,
+            "Actual_Invested": actual_invested,
+            "Confirmed_Value": confirmed_value,
+        })
+
+    return {
+        "cash": float(adjusted_cash),
+        "confirmed_position_value": float(confirmed_position_value),
+        "nav": float(adjusted_cash + confirmed_position_value),
+        "positions": pd.DataFrame(rows),
+    }
+
+
+def build_v9_quantity_editor_rows(open_positions, qty_overrides, fx_daily=None, fallback_fx=None):
+    rows = []
+    for slot_no, pos in enumerate(open_positions or [], start=1):
+        key = v9_position_key(pos)
+        entry_date = pd.Timestamp(pos["entry_date"]).normalize()
+        entry_price = float(pos["entry_price"])
+        invested = float(pos["invested"])
+        entry_fx = lookup_entry_fx(entry_date, fx_daily, fallback_fx)
+        strategy_qty = (
+            int(round(invested / (entry_price * entry_fx)))
+            if entry_fx is not None and entry_fx > 0 and entry_price > 0
+            else 0
+        )
+        rows.append({
+            "_key": key,
+            "슬롯": slot_no,
+            "매수일": entry_date.date(),
+            "매수가": f"${entry_price:,.2f}",
+            "전략 기준수량": strategy_qty,
+            "실제 보유수량": int(qty_overrides.get(key, max(1, strategy_qty))),
+        })
+    return pd.DataFrame(rows)
+
+
 def build_v9_open_positions_table(
     open_positions,
     current_close,
@@ -794,8 +910,9 @@ def build_v9_open_positions_table(
     holding_days=7,
     fx_daily=None,
     fallback_fx=None,
+    qty_overrides=None,
 ):
-    """V9 미청산 포지션을 현재 적용 LOC와 함께 표시합니다."""
+    """V9 미청산 포지션을 현재 적용 LOC와 실제 입력수량 기준으로 표시합니다."""
     if not open_positions:
         return pd.DataFrame()
 
@@ -835,22 +952,29 @@ def build_v9_open_positions_table(
         # 수익률 계산용 합성 단위입니다. 실제 주문수량 표시에 사용하면 안 됩니다.
         # 실제 수량은 원화 매수금액을 매수일 USD/KRW로 달러 환산한 뒤 계산합니다.
         entry_fx = lookup_entry_fx(entry_date, fx_daily, fallback_fx)
-        actual_qty = (
-            invested / (entry_price * entry_fx)
+        strategy_qty = (
+            int(round(invested / (entry_price * entry_fx)))
             if entry_fx is not None and entry_fx > 0 and entry_price > 0
             else None
         )
+        key = v9_position_key(pos)
+        if strategy_qty is not None:
+            selected_qty = int((qty_overrides or {}).get(key, max(1, strategy_qty)))
+            actual_invested = selected_qty * entry_price * entry_fx
+        else:
+            selected_qty = None
+            actual_invested = invested
 
         rows.append({
             "슬롯": slot_no,
             "매수일": entry_date.date(),
-            "매수금액": f"{invested:,.0f}원",
+            "매수금액": f"{actual_invested:,.0f}원",
             "매수가": f"${entry_price:,.2f}",
             "적용환율": f"{entry_fx:,.2f}원/$" if entry_fx is not None else "환율 조회 필요",
-            "보유수량": f"{actual_qty:,.0f}주" if actual_qty is not None else "계산 불가",
+            "보유수량": f"{selected_qty:,.0f}주" if selected_qty is not None else "계산 불가",
             "현재가": f"${float(current_close):,.2f}",
             "현재 수익률": f"{current_return:.2%}",
-            "평가손익": f"{invested * current_return:+,.0f}원",
+            "평가손익": f"{actual_invested * current_return:+,.0f}원",
             "LOC 모드": loc_mode,
             "LOC 주문가": f"${target_price:,.2f}",
             "MOC 예정일": f"{deadline.date()}{' (예상)' if estimated else ''}",
@@ -861,19 +985,30 @@ def build_v9_open_positions_table(
     return pd.DataFrame(rows)
 
 
-def build_live_open_holdings_df(strategy_mode, live_result, live_trades):
+def build_live_open_holdings_df(
+    strategy_mode, live_result, live_trades,
+    qty_overrides=None, fx_daily=None, fallback_fx=None,
+):
     """실시간 평가손익 계산에 사용할 미청산 포지션 원자료."""
     if strategy_mode.startswith("V9"):
         positions = live_result.get("open_positions", [])
         if not positions:
             return pd.DataFrame(columns=["Entry_Price", "Invested"])
-        return pd.DataFrame([
-            {
-                "Entry_Price": float(p["entry_price"]),
-                "Invested": float(p["invested"]),
-            }
-            for p in positions
-        ])
+        rows = []
+        for p in positions:
+            entry_date = pd.Timestamp(p["entry_date"]).normalize()
+            entry_price = float(p["entry_price"])
+            model_invested = float(p["invested"])
+            entry_fx = lookup_entry_fx(entry_date, fx_daily, fallback_fx)
+            if entry_fx is not None and entry_fx > 0 and entry_price > 0:
+                strategy_qty = int(round(model_invested / (entry_price * entry_fx)))
+                key = v9_position_key(p)
+                actual_qty = int((qty_overrides or {}).get(key, max(1, strategy_qty)))
+                actual_invested = actual_qty * entry_price * entry_fx
+            else:
+                actual_invested = model_invested
+            rows.append({"Entry_Price": entry_price, "Invested": actual_invested})
+        return pd.DataFrame(rows)
 
     if not live_trades.empty and "Exit_Type" in live_trades.columns:
         return live_trades[live_trades["Exit_Type"] == "END"].copy()
@@ -2417,20 +2552,50 @@ else:
     )
 
 live_trades = live_result["trades"]
-live_nav = float(live_result["equity"]["Equity"].iloc[-1])
+model_live_nav = float(live_result["equity"]["Equity"].iloc[-1])
 
 # 주문 대상 미국 거래일 기준으로 보유 슬롯의 MOC 기한을 보여줍니다.
 position_reference_date = action_session
 
+# V9 실전 운용에서는 사용자가 입력한 실제 보유수량을 현금/NAV/다음 주문금액에 반영합니다.
+portfolio_fx_snapshot = get_usdkrw_realtime_snapshot() if strategy_mode.startswith("V9") else {"rate": None}
+portfolio_fallback_fx = portfolio_fx_snapshot.get("rate")
+v9_fx_daily = pd.DataFrame(columns=["Date", "USD_KRW"])
+v9_quantity_overrides = {}
+
 if strategy_mode.startswith("V9"):
+    v9_open_positions = live_result.get("open_positions", [])
+    if v9_open_positions:
+        earliest_entry = min(pd.Timestamp(p["entry_date"]) for p in v9_open_positions)
+        latest_entry = max(pd.Timestamp(p["entry_date"]) for p in v9_open_positions)
+        v9_fx_daily = get_usdkrw_daily_rates(earliest_entry, latest_entry)
+    v9_quantity_overrides = get_v9_quantity_overrides(
+        v9_open_positions,
+        fx_daily=v9_fx_daily,
+        fallback_fx=portfolio_fallback_fx,
+    )
+    actual_portfolio = calculate_v9_actual_portfolio(
+        v9_open_positions,
+        model_cash=live_cash,
+        confirmed_close=live_close,
+        qty_overrides=v9_quantity_overrides,
+        fx_daily=v9_fx_daily,
+        fallback_fx=portfolio_fallback_fx,
+    )
+    live_cash = float(actual_portfolio["cash"])
+    live_nav = float(actual_portfolio["nav"])
     open_positions_display = build_v9_open_positions_table(
-        live_result.get("open_positions", []),
+        v9_open_positions,
         current_close=live_close,
         as_of_date=position_reference_date,
         tb3_state=latest_tb3_state,
         holding_days=BASE_HOLDING_DAYS,
+        fx_daily=v9_fx_daily,
+        fallback_fx=portfolio_fallback_fx,
+        qty_overrides=v9_quantity_overrides,
     )
 else:
+    live_nav = model_live_nav
     open_positions_display = build_open_positions_table(
         live_trades,
         current_close=live_close,
@@ -2737,6 +2902,9 @@ def render_compact_trading_dashboard():
         strategy_mode,
         live_result,
         live_trades,
+        qty_overrides=v9_quantity_overrides,
+        fx_daily=v9_fx_daily,
+        fallback_fx=portfolio_fallback_fx,
     )
 
     if open_df.empty:
@@ -2851,9 +3019,9 @@ def render_compact_trading_dashboard():
 
     # 핵심 포트폴리오 숫자는 한 줄로 압축합니다.
     s1, s2, s3, s4, s5 = st.columns(5)
-    s1.metric("Confirmed NAV(확정 NAV)", f"{live_nav:,.0f}원")
+    s1.metric("Confirmed NAV(확정 NAV)", f"{live_nav:,.0f}원", help="V9에서는 입력한 실제 보유수량을 반영합니다.")
     s2.metric("Live NAV(실시간 NAV)", f"{realtime_nav:,.0f}원")
-    s3.metric("Cash(사용가능 현금)", f"{usable_cash:,.0f}원")
+    s3.metric("Cash(사용가능 현금)", f"{usable_cash:,.0f}원", help="실제 보유수량과 전략 기준수량의 매수금액 차이를 반영한 현금입니다.")
     s4.metric("Slots(보유 슬롯)", f"{live_open_count} / {max_slots_for_live}")
     s5.metric("MOC Today(오늘 MOC)", f"{moc_today_count}건")
 
@@ -2952,23 +3120,57 @@ def render_compact_trading_dashboard():
         "모든 V9 신호는 직전 확정 일봉 기준이며 실시간 영역은 5분마다 자동 새로고침됩니다."
     )
 
+    if strategy_mode.startswith("V9"):
+        v9_open_positions = live_result.get("open_positions", [])
+        if v9_open_positions:
+            with st.expander("✏️ 실제 보유수량 수정", expanded=False):
+                st.caption(
+                    "전략 기준수량과 실제 주문수량이 다르면 ‘실제 보유수량’을 수정한 뒤 적용하세요. "
+                    "수정값은 실전 NAV·현금·평가손익·다음 매수금액에 반영되며 백테스트 성과에는 영향을 주지 않습니다."
+                )
+                editor_df = build_v9_quantity_editor_rows(
+                    v9_open_positions,
+                    v9_quantity_overrides,
+                    fx_daily=v9_fx_daily,
+                    fallback_fx=portfolio_fallback_fx,
+                )
+                edited_df = st.data_editor(
+                    editor_df.drop(columns=["_key"]),
+                    hide_index=True,
+                    use_container_width=True,
+                    disabled=["슬롯", "매수일", "매수가", "전략 기준수량"],
+                    column_config={
+                        "실제 보유수량": st.column_config.NumberColumn(
+                            "실제 보유수량", min_value=1, step=1, format="%d주"
+                        ),
+                    },
+                    key="v9_actual_quantity_editor",
+                )
+                ec1, ec2 = st.columns([1, 1])
+                if ec1.button("✅ 수정 수량 적용", use_container_width=True, key="apply_v9_qty"):
+                    new_map = {}
+                    for i, row in edited_df.iterrows():
+                        key = editor_df.iloc[i]["_key"]
+                        new_map[key] = max(1, int(round(float(row["실제 보유수량"]))))
+                    st.session_state["v9_quantity_overrides"] = new_map
+                    st.rerun()
+                if ec2.button("↩️ 전략 기준수량으로 복원", use_container_width=True, key="reset_v9_qty"):
+                    st.session_state.pop("v9_quantity_overrides", None)
+                    st.rerun()
+                st.info("웹앱 재시작/재배포 시 수정수량이 초기화될 수 있습니다. 실제 체결수량은 증권사 보유내역과 함께 확인하세요.")
+
     st.subheader("📦 Open Positions(현재 보유 슬롯)")
 
     if strategy_mode.startswith("V9"):
-        v9_open_positions = live_result.get("open_positions", [])
-        fx_daily = pd.DataFrame(columns=["Date", "USD_KRW"])
-        if v9_open_positions:
-            earliest_entry = min(pd.Timestamp(p["entry_date"]) for p in v9_open_positions)
-            latest_entry = max(pd.Timestamp(p["entry_date"]) for p in v9_open_positions)
-            fx_daily = get_usdkrw_daily_rates(earliest_entry, latest_entry)
         realtime_positions = build_v9_open_positions_table(
             v9_open_positions,
             current_close=realtime_price,
             as_of_date=position_reference_date,
             tb3_state=latest_tb3_state,
             holding_days=BASE_HOLDING_DAYS,
-            fx_daily=fx_daily,
-            fallback_fx=realtime_fx,
+            fx_daily=v9_fx_daily,
+            fallback_fx=portfolio_fallback_fx,
+            qty_overrides=v9_quantity_overrides,
         )
     else:
         realtime_positions = build_open_positions_table(
