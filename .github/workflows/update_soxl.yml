@@ -1,0 +1,62 @@
+name: Update SOXL Daily Data
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # 한국시간 화~토 오전 7:35
+    # 미국 월~금 정규장 마감 후 SOXL 확정 일봉 업데이트
+    - cron: "35 7 * * 2-6"
+      timezone: "Asia/Seoul"
+
+permissions:
+  contents: write
+
+jobs:
+  update-soxl-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Update SOXL data
+        run: |
+          python data_updater.py
+
+      - name: Show latest data
+        run: |
+          python - <<'PY'
+          import pandas as pd
+
+          df = pd.read_csv("SOXL_adjusted.csv")
+          print("Rows:", len(df))
+          print("Latest date:", df["Date"].iloc[-1])
+          print(df.tail())
+          PY
+
+      - name: Commit updated CSV
+        shell: bash
+        run: |
+          if git diff --quiet -- SOXL_adjusted.csv; then
+            echo "No new SOXL data. Nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add SOXL_adjusted.csv
+          git commit -m "Auto-update SOXL daily data"
+          git push
