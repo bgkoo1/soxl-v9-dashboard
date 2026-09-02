@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import json
+import base64
+import requests
+from cryptography.fernet import Fernet, InvalidToken
 from pathlib import Path
 from datetime import datetime, date, time, timedelta
 from zoneinfo import ZoneInfo
@@ -302,6 +305,150 @@ def save_dashboard_settings(start_date_value, initial_capital_value):
             json.dump(payload, f, ensure_ascii=False, indent=2)
     except OSError as e:
         st.sidebar.warning(f"설정값 저장 실패: {e}")
+
+
+
+
+# ============================================================
+# ENCRYPTED LIVE PORTFOLIO PERSISTENCE (GitHub + Streamlit Secrets)
+# ============================================================
+
+LIVE_PORTFOLIO_PATH = "live_portfolio.enc"
+DEFAULT_GITHUB_REPO = "bgkoo1/soxl-v9-dashboard"
+DEFAULT_GITHUB_BRANCH = "main"
+
+
+def _portfolio_persistence_config():
+    """Streamlit Secrets에서 GitHub 저장/암호화 설정을 읽습니다."""
+    try:
+        token = str(st.secrets.get("GITHUB_TOKEN", "")).strip()
+        encryption_key = str(st.secrets.get("PORTFOLIO_ENCRYPTION_KEY", "")).strip()
+        repo = str(st.secrets.get("GITHUB_REPO", DEFAULT_GITHUB_REPO)).strip()
+        branch = str(st.secrets.get("GITHUB_BRANCH", DEFAULT_GITHUB_BRANCH)).strip()
+    except Exception:
+        return None
+
+    if not token or not encryption_key or not repo:
+        return None
+
+    try:
+        Fernet(encryption_key.encode("utf-8"))
+    except Exception:
+        return None
+
+    return {
+        "token": token,
+        "key": encryption_key,
+        "repo": repo,
+        "branch": branch or DEFAULT_GITHUB_BRANCH,
+    }
+
+
+def portfolio_persistence_enabled():
+    return _portfolio_persistence_config() is not None
+
+
+def _github_contents_url(config):
+    return f"https://api.github.com/repos/{config['repo']}/contents/{LIVE_PORTFOLIO_PATH}"
+
+
+def _github_headers(config):
+    return {
+        "Authorization": f"Bearer {config['token']}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def load_persisted_v9_quantities():
+    """GitHub의 암호화 파일에서 실제 보유수량을 복원합니다."""
+    config = _portfolio_persistence_config()
+    if config is None:
+        return {}, "Secrets 미설정"
+
+    try:
+        response = requests.get(
+            _github_contents_url(config),
+            headers=_github_headers(config),
+            params={"ref": config["branch"]},
+            timeout=10,
+        )
+        if response.status_code == 404:
+            return {}, "저장 데이터 없음"
+        response.raise_for_status()
+        item = response.json()
+        encrypted = base64.b64decode(item["content"])
+        decrypted = Fernet(config["key"].encode("utf-8")).decrypt(encrypted)
+        payload = json.loads(decrypted.decode("utf-8"))
+        quantities = payload.get("quantities", {}) if isinstance(payload, dict) else {}
+        if not isinstance(quantities, dict):
+            quantities = {}
+        cleaned = {}
+        for k, v in quantities.items():
+            try:
+                cleaned[str(k)] = max(1, int(round(float(v))))
+            except (TypeError, ValueError):
+                continue
+        return cleaned, "GitHub 암호화 저장값 불러옴"
+    except InvalidToken:
+        return {}, "암호화 키가 저장 데이터와 일치하지 않음"
+    except Exception as e:
+        return {}, f"영구 저장 불러오기 실패: {e}"
+
+
+def save_persisted_v9_quantities(quantity_map):
+    """실제 보유수량을 암호화해 GitHub에 저장합니다."""
+    config = _portfolio_persistence_config()
+    if config is None:
+        return False, "Streamlit Secrets에 GitHub/암호화 설정이 없습니다."
+
+    cleaned = {}
+    for k, v in (quantity_map or {}).items():
+        try:
+            cleaned[str(k)] = max(1, int(round(float(v))))
+        except (TypeError, ValueError):
+            continue
+
+    payload = {
+        "version": 1,
+        "updated_at": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(),
+        "quantities": cleaned,
+    }
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    encrypted = Fernet(config["key"].encode("utf-8")).encrypt(raw)
+    encoded = base64.b64encode(encrypted).decode("ascii")
+
+    try:
+        sha = None
+        current = requests.get(
+            _github_contents_url(config),
+            headers=_github_headers(config),
+            params={"ref": config["branch"]},
+            timeout=10,
+        )
+        if current.status_code == 200:
+            sha = current.json().get("sha")
+        elif current.status_code != 404:
+            current.raise_for_status()
+
+        body = {
+            "message": "Update encrypted live portfolio quantities",
+            "content": encoded,
+            "branch": config["branch"],
+        }
+        if sha:
+            body["sha"] = sha
+
+        response = requests.put(
+            _github_contents_url(config),
+            headers=_github_headers(config),
+            json=body,
+            timeout=15,
+        )
+        response.raise_for_status()
+        return True, "실제 보유수량을 암호화하여 영구 저장했습니다."
+    except Exception as e:
+        return False, f"영구 저장 실패: {e}"
 
 
 # ============================================================
@@ -795,8 +942,14 @@ def v9_position_key(pos):
 
 
 def get_v9_quantity_overrides(open_positions, fx_daily=None, fallback_fx=None):
-    """세션에 저장된 실제 보유수량을 정리하고, 새 슬롯에는 전략 기준 정수수량을 채웁니다."""
-    stored = st.session_state.get("v9_quantity_overrides", {})
+    """영구 저장값을 우선 불러오고, 새 슬롯에는 전략 기준 정수수량을 채웁니다."""
+    if "v9_quantity_overrides" not in st.session_state:
+        stored, status = load_persisted_v9_quantities()
+        st.session_state["v9_quantity_overrides"] = stored
+        st.session_state["v9_quantity_persistence_status"] = status
+    else:
+        stored = st.session_state.get("v9_quantity_overrides", {})
+
     if not isinstance(stored, dict):
         stored = {}
 
@@ -3147,17 +3300,37 @@ def render_compact_trading_dashboard():
                     key="v9_actual_quantity_editor",
                 )
                 ec1, ec2 = st.columns([1, 1])
-                if ec1.button("✅ 수정 수량 적용", use_container_width=True, key="apply_v9_qty"):
+                if ec1.button("✅ 수정 수량 적용·영구저장", use_container_width=True, key="apply_v9_qty"):
                     new_map = {}
                     for i, row in edited_df.iterrows():
                         key = editor_df.iloc[i]["_key"]
                         new_map[key] = max(1, int(round(float(row["실제 보유수량"]))))
                     st.session_state["v9_quantity_overrides"] = new_map
+                    ok, msg = save_persisted_v9_quantities(new_map)
+                    st.session_state["v9_quantity_persistence_status"] = msg
+                    st.session_state["v9_quantity_persistence_ok"] = ok
                     st.rerun()
-                if ec2.button("↩️ 전략 기준수량으로 복원", use_container_width=True, key="reset_v9_qty"):
-                    st.session_state.pop("v9_quantity_overrides", None)
+                if ec2.button("↩️ 전략 기준수량으로 복원·영구저장", use_container_width=True, key="reset_v9_qty"):
+                    default_map = {}
+                    for _, row in editor_df.iterrows():
+                        default_map[row["_key"]] = max(1, int(row["전략 기준수량"]))
+                    st.session_state["v9_quantity_overrides"] = default_map
+                    ok, msg = save_persisted_v9_quantities(default_map)
+                    st.session_state["v9_quantity_persistence_status"] = msg
+                    st.session_state["v9_quantity_persistence_ok"] = ok
                     st.rerun()
-                st.info("웹앱 재시작/재배포 시 수정수량이 초기화될 수 있습니다. 실제 체결수량은 증권사 보유내역과 함께 확인하세요.")
+
+                persistence_msg = st.session_state.get("v9_quantity_persistence_status", "")
+                if portfolio_persistence_enabled():
+                    if st.session_state.get("v9_quantity_persistence_ok") is False:
+                        st.error(f"☁️ 영구저장 오류 · {persistence_msg}")
+                    else:
+                        st.success(f"🔐 영구저장 연결됨 · {persistence_msg or 'GitHub 암호화 저장소 사용'}")
+                else:
+                    st.warning(
+                        "현재는 세션 저장만 사용 중입니다. Streamlit Secrets에 GITHUB_TOKEN과 "
+                        "PORTFOLIO_ENCRYPTION_KEY를 설정하면 재시작 후에도 실제 수량이 유지됩니다."
+                    )
 
     st.subheader("📦 Open Positions(현재 보유 슬롯)")
 
