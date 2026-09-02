@@ -180,70 +180,154 @@ def get_soxl_realtime_snapshot(fallback_close):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_usdkrw_realtime_snapshot():
-    """USD/KRW 참고 환율. 주문수량 표시용이며 전략 신호/백테스트에는 사용하지 않습니다."""
+    """USD/KRW 참고환율. Yahoo Chart API 우선, yfinance 보조."""
     result = {
         "rate": None,
         "source": "조회 실패",
         "is_live": False,
         "error": None,
     }
-    if yf is None:
-        result["error"] = "yfinance가 설치되어 있지 않습니다."
-        return result
+
+    # 1) Yahoo Finance Chart API: Streamlit Cloud에서 yfinance가 막히는 경우를 대비한 1순위
     try:
-        ticker = yf.Ticker("KRW=X")
-        intraday = ticker.history(period="1d", interval="5m", auto_adjust=False, prepost=True)
-        if not intraday.empty and "Close" in intraday.columns:
-            values = intraday["Close"].dropna()
-            if not values.empty:
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
+        params = {
+            "range": "5d",
+            "interval": "5m",
+            "includePrePost": "true",
+            "events": "div,splits",
+        }
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; SOXL-V9-Dashboard/1.0)",
+            "Accept": "application/json,text/plain,*/*",
+        }
+        r = requests.get(url, params=params, headers=headers, timeout=10)
+        r.raise_for_status()
+        payload = r.json()
+        chart_result = (payload.get("chart") or {}).get("result") or []
+        if chart_result:
+            closes = (((chart_result[0].get("indicators") or {}).get("quote") or [{}])[0].get("close") or [])
+            valid = [float(x) for x in closes if x is not None and pd.notna(x) and float(x) > 0]
+            if valid:
                 result.update({
-                    "rate": float(values.iloc[-1]),
-                    "source": "Yahoo Finance USD/KRW",
+                    "rate": valid[-1],
+                    "source": "Yahoo Finance Chart API USD/KRW",
                     "is_live": True,
+                    "error": None,
                 })
                 return result
-        daily = ticker.history(period="5d", interval="1d", auto_adjust=False)
-        if not daily.empty and "Close" in daily.columns:
-            values = daily["Close"].dropna()
-            if not values.empty:
-                result.update({
-                    "rate": float(values.iloc[-1]),
-                    "source": "Yahoo Finance USD/KRW 최근 종가",
-                    "is_live": False,
-                })
     except Exception as e:
-        result["error"] = str(e)
+        result["error"] = f"Yahoo API: {e}"
+
+    # 2) yfinance 보조 경로
+    if yf is not None:
+        try:
+            ticker = yf.Ticker("KRW=X")
+            intraday = ticker.history(period="1d", interval="5m", auto_adjust=False, prepost=True)
+            if not intraday.empty and "Close" in intraday.columns:
+                values = pd.to_numeric(intraday["Close"], errors="coerce").dropna()
+                if not values.empty:
+                    result.update({
+                        "rate": float(values.iloc[-1]),
+                        "source": "yfinance USD/KRW",
+                        "is_live": True,
+                        "error": None,
+                    })
+                    return result
+
+            daily = ticker.history(period="5d", interval="1d", auto_adjust=False)
+            if not daily.empty and "Close" in daily.columns:
+                values = pd.to_numeric(daily["Close"], errors="coerce").dropna()
+                if not values.empty:
+                    result.update({
+                        "rate": float(values.iloc[-1]),
+                        "source": "yfinance USD/KRW 최근 종가",
+                        "is_live": False,
+                        "error": None,
+                    })
+                    return result
+        except Exception as e:
+            prev = result.get("error")
+            result["error"] = f"{prev or ''} / yfinance: {e}".strip(" / ")
+
     return result
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_usdkrw_daily_rates(start_date_value, end_date_value):
-    """보유 슬롯의 매수일별 예상수량 계산에 사용할 USD/KRW 일별 환율."""
-    if yf is None:
-        return pd.DataFrame(columns=["Date", "USD_KRW"])
+    """보유 슬롯 매수일별 USD/KRW. Yahoo Chart API 우선, yfinance 보조."""
+    start_ts = pd.Timestamp(start_date_value).normalize() - pd.Timedelta(days=10)
+    end_ts = pd.Timestamp(end_date_value).normalize() + pd.Timedelta(days=3)
+
+    # 1) Yahoo Chart API
     try:
-        start_ts = pd.Timestamp(start_date_value).normalize() - pd.Timedelta(days=10)
-        end_ts = pd.Timestamp(end_date_value).normalize() + pd.Timedelta(days=3)
-        fx = yf.download(
-            "KRW=X",
-            start=start_ts.date().isoformat(),
-            end=end_ts.date().isoformat(),
-            auto_adjust=False,
-            progress=False,
-        )
-        if fx.empty:
-            return pd.DataFrame(columns=["Date", "USD_KRW"])
-        if isinstance(fx.columns, pd.MultiIndex):
-            fx.columns = fx.columns.get_level_values(0)
-        col = "Close" if "Close" in fx.columns else None
-        if col is None:
-            return pd.DataFrame(columns=["Date", "USD_KRW"])
-        fx = fx.reset_index()[["Date", col]].rename(columns={col: "USD_KRW"})
-        fx["Date"] = pd.to_datetime(fx["Date"]).dt.normalize()
-        fx["USD_KRW"] = pd.to_numeric(fx["USD_KRW"], errors="coerce")
-        return fx.dropna(subset=["USD_KRW"]).sort_values("Date").reset_index(drop=True)
+        period1 = int(start_ts.tz_localize("UTC").timestamp())
+        period2 = int((end_ts + pd.Timedelta(days=1)).tz_localize("UTC").timestamp())
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/KRW=X"
+        params = {
+            "period1": period1,
+            "period2": period2,
+            "interval": "1d",
+            "events": "history",
+            "includeAdjustedClose": "true",
+        }
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; SOXL-V9-Dashboard/1.0)",
+            "Accept": "application/json,text/plain,*/*",
+        }
+        r = requests.get(url, params=params, headers=headers, timeout=10)
+        r.raise_for_status()
+        payload = r.json()
+        chart_result = (payload.get("chart") or {}).get("result") or []
+        if chart_result:
+            item = chart_result[0]
+            timestamps = item.get("timestamp") or []
+            closes = (((item.get("indicators") or {}).get("quote") or [{}])[0].get("close") or [])
+            rows = []
+            for ts, close in zip(timestamps, closes):
+                if close is None or not pd.notna(close) or float(close) <= 0:
+                    continue
+                # Yahoo timestamps are UTC; only date matching is needed here.
+                rows.append({
+                    "Date": pd.to_datetime(int(ts), unit="s", utc=True).tz_convert("America/New_York").tz_localize(None).normalize(),
+                    "USD_KRW": float(close),
+                })
+            if rows:
+                return (
+                    pd.DataFrame(rows)
+                    .drop_duplicates(subset=["Date"], keep="last")
+                    .sort_values("Date")
+                    .reset_index(drop=True)
+                )
     except Exception:
-        return pd.DataFrame(columns=["Date", "USD_KRW"])
+        pass
+
+    # 2) yfinance 보조 경로
+    if yf is not None:
+        try:
+            fx = yf.download(
+                "KRW=X",
+                start=start_ts.date().isoformat(),
+                end=(end_ts + pd.Timedelta(days=1)).date().isoformat(),
+                auto_adjust=False,
+                progress=False,
+                threads=False,
+            )
+            if not fx.empty:
+                if isinstance(fx.columns, pd.MultiIndex):
+                    fx.columns = fx.columns.get_level_values(0)
+                if "Close" in fx.columns:
+                    fx = fx.reset_index()[["Date", "Close"]].rename(columns={"Close": "USD_KRW"})
+                    fx["Date"] = pd.to_datetime(fx["Date"]).dt.tz_localize(None).dt.normalize()
+                    fx["USD_KRW"] = pd.to_numeric(fx["USD_KRW"], errors="coerce")
+                    fx = fx.dropna(subset=["USD_KRW"])
+                    fx = fx[fx["USD_KRW"] > 0]
+                    if not fx.empty:
+                        return fx.sort_values("Date").reset_index(drop=True)
+        except Exception:
+            pass
+
+    return pd.DataFrame(columns=["Date", "USD_KRW"])
 
 
 def lookup_entry_fx(entry_date, fx_daily, fallback_rate=None):
