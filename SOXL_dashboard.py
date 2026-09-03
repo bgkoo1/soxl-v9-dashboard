@@ -444,11 +444,41 @@ def _github_headers(config):
     }
 
 
-def load_persisted_v9_quantities():
-    """GitHub의 암호화 파일에서 실제 보유수량을 복원합니다."""
+def _sanitize_v9_cashflows(items):
+    """암호화 저장소의 입출금 내역을 안전한 형식으로 정리합니다."""
+    cleaned = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            flow_date = pd.Timestamp(item.get("date")).date().isoformat()
+            flow_type = str(item.get("type", "입금")).strip()
+            if flow_type not in {"입금", "출금"}:
+                continue
+            amount = float(item.get("amount", 0))
+            if amount <= 0:
+                continue
+            flow_id = str(item.get("id") or f"{flow_date}-{len(cleaned)+1}")
+            memo = str(item.get("memo", "")).strip()[:100]
+        except Exception:
+            continue
+        cleaned.append({
+            "id": flow_id,
+            "date": flow_date,
+            "type": flow_type,
+            "amount": amount,
+            "memo": memo,
+        })
+    cleaned.sort(key=lambda x: (x["date"], x["id"]))
+    return cleaned
+
+
+def _load_persisted_v9_state():
+    """GitHub 암호화 파일에서 실제수량 + 추가 입출금 장부를 함께 복원합니다."""
     config = _portfolio_persistence_config()
+    empty = {"quantities": {}, "cashflows": []}
     if config is None:
-        return {}, "Secrets 미설정"
+        return empty, "Secrets 미설정"
 
     try:
         response = requests.get(
@@ -458,45 +488,55 @@ def load_persisted_v9_quantities():
             timeout=10,
         )
         if response.status_code == 404:
-            return {}, "저장 데이터 없음"
+            return empty, "저장 데이터 없음"
         response.raise_for_status()
         item = response.json()
         encrypted = base64.b64decode(item["content"])
         decrypted = Fernet(config["key"].encode("utf-8")).decrypt(encrypted)
         payload = json.loads(decrypted.decode("utf-8"))
-        quantities = payload.get("quantities", {}) if isinstance(payload, dict) else {}
+        if not isinstance(payload, dict):
+            payload = {}
+
+        quantities = payload.get("quantities", {})
         if not isinstance(quantities, dict):
             quantities = {}
-        cleaned = {}
+        cleaned_qty = {}
         for k, v in quantities.items():
             try:
-                cleaned[str(k)] = max(1, int(round(float(v))))
+                cleaned_qty[str(k)] = max(1, int(round(float(v))))
             except (TypeError, ValueError):
                 continue
-        return cleaned, "GitHub 암호화 저장값 불러옴"
+
+        cashflows = _sanitize_v9_cashflows(payload.get("cashflows", []))
+        return {
+            "quantities": cleaned_qty,
+            "cashflows": cashflows,
+        }, "GitHub 암호화 저장값 불러옴"
     except InvalidToken:
-        return {}, "암호화 키가 저장 데이터와 일치하지 않음"
+        return empty, "암호화 키가 저장 데이터와 일치하지 않음"
     except Exception as e:
-        return {}, f"영구 저장 불러오기 실패: {e}"
+        return empty, f"영구 저장 불러오기 실패: {e}"
 
 
-def save_persisted_v9_quantities(quantity_map):
-    """실제 보유수량을 암호화해 GitHub에 저장합니다."""
+def _save_persisted_v9_state(quantity_map=None, cashflows=None):
+    """실제수량과 입출금 장부를 하나의 암호화 파일로 저장합니다."""
     config = _portfolio_persistence_config()
     if config is None:
         return False, "Streamlit Secrets에 GitHub/암호화 설정이 없습니다."
 
-    cleaned = {}
+    cleaned_qty = {}
     for k, v in (quantity_map or {}).items():
         try:
-            cleaned[str(k)] = max(1, int(round(float(v))))
+            cleaned_qty[str(k)] = max(1, int(round(float(v))))
         except (TypeError, ValueError):
             continue
+    cleaned_cashflows = _sanitize_v9_cashflows(cashflows)
 
     payload = {
-        "version": 1,
+        "version": 2,
         "updated_at": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(),
-        "quantities": cleaned,
+        "quantities": cleaned_qty,
+        "cashflows": cleaned_cashflows,
     }
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     encrypted = Fernet(config["key"].encode("utf-8")).encrypt(raw)
@@ -516,7 +556,7 @@ def save_persisted_v9_quantities(quantity_map):
             current.raise_for_status()
 
         body = {
-            "message": "Update encrypted live portfolio quantities",
+            "message": "Update encrypted live portfolio state",
             "content": encoded,
             "branch": config["branch"],
         }
@@ -529,10 +569,78 @@ def save_persisted_v9_quantities(quantity_map):
             json=body,
             timeout=15,
         )
+        # 동시 저장 충돌 시 최신 SHA를 다시 읽고 1회 재시도합니다.
+        if response.status_code == 409:
+            current = requests.get(
+                _github_contents_url(config),
+                headers=_github_headers(config),
+                params={"ref": config["branch"]},
+                timeout=10,
+            )
+            current.raise_for_status()
+            body["sha"] = current.json().get("sha")
+            response = requests.put(
+                _github_contents_url(config),
+                headers=_github_headers(config),
+                json=body,
+                timeout=15,
+            )
         response.raise_for_status()
-        return True, "실제 보유수량을 암호화하여 영구 저장했습니다."
+        return True, "실제 보유수량과 입출금 내역을 암호화하여 영구 저장했습니다."
     except Exception as e:
         return False, f"영구 저장 실패: {e}"
+
+
+def load_persisted_v9_quantities():
+    """기존 호출부 호환용: 저장 상태에서 실제 보유수량만 반환합니다."""
+    state, status = _load_persisted_v9_state()
+    st.session_state["v9_cashflows"] = state.get("cashflows", [])
+    return state.get("quantities", {}), status
+
+
+def load_persisted_v9_cashflows():
+    """입출금 장부를 불러오며 수량도 같은 세션에 동기화합니다."""
+    state, status = _load_persisted_v9_state()
+    st.session_state["v9_quantity_overrides"] = state.get("quantities", {})
+    st.session_state["v9_cashflows"] = state.get("cashflows", [])
+    st.session_state["v9_quantity_persistence_status"] = status
+    return state.get("cashflows", []), status
+
+
+def save_persisted_v9_quantities(quantity_map):
+    """실제 보유수량 저장 시 기존 입출금 장부를 보존합니다."""
+    return _save_persisted_v9_state(
+        quantity_map=quantity_map,
+        cashflows=st.session_state.get("v9_cashflows", []),
+    )
+
+
+def save_persisted_v9_cashflows(cashflows):
+    """입출금 장부 저장 시 기존 실제 보유수량을 보존합니다."""
+    return _save_persisted_v9_state(
+        quantity_map=st.session_state.get("v9_quantity_overrides", {}),
+        cashflows=cashflows,
+    )
+
+
+def summarize_v9_cashflows(cashflows, as_of_date=None):
+    """지정일 현재 추가 입금/출금 및 순입금을 계산합니다."""
+    cutoff = pd.Timestamp(as_of_date).date() if as_of_date is not None else None
+    deposits = withdrawals = 0.0
+    for item in _sanitize_v9_cashflows(cashflows):
+        flow_date = pd.Timestamp(item["date"]).date()
+        if cutoff is not None and flow_date > cutoff:
+            continue
+        amount = float(item["amount"])
+        if item["type"] == "입금":
+            deposits += amount
+        else:
+            withdrawals += amount
+    return {
+        "deposits": float(deposits),
+        "withdrawals": float(withdrawals),
+        "net": float(deposits - withdrawals),
+    }
 
 
 # ============================================================
@@ -2591,6 +2699,120 @@ if start_date > end_date:
     st.stop()
 
 
+# ============================================================
+# LIVE CASHFLOW MANAGEMENT (V9 ONLY)
+# ============================================================
+
+v9_cashflows = []
+v9_cashflow_summary = {"deposits": 0.0, "withdrawals": 0.0, "net": 0.0}
+
+if strategy_mode.startswith("V9"):
+    if "v9_cashflows" not in st.session_state:
+        loaded_cashflows, cashflow_status = load_persisted_v9_cashflows()
+        st.session_state["v9_cashflows"] = loaded_cashflows
+        st.session_state["v9_cashflow_persistence_status"] = cashflow_status
+
+    v9_cashflows = _sanitize_v9_cashflows(st.session_state.get("v9_cashflows", []))
+    today_kst_for_cashflow = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    v9_cashflow_summary = summarize_v9_cashflows(v9_cashflows, today_kst_for_cashflow)
+
+    with st.sidebar.expander("💰 추가 자금 입출금", expanded=False):
+        st.caption(
+            f"누적 입금 {v9_cashflow_summary['deposits']:,.0f}원 · "
+            f"누적 출금 {v9_cashflow_summary['withdrawals']:,.0f}원 · "
+            f"순입금 {v9_cashflow_summary['net']:+,.0f}원"
+        )
+        st.caption("추가 자금은 실전 현금·NAV·다음 신규매수 금액에만 반영되며 백테스트 CAGR/MDD에는 반영되지 않습니다.")
+
+        flow_date = st.date_input(
+            "입출금일",
+            value=today_kst_for_cashflow,
+            max_value=today_kst_for_cashflow,
+            key="v9_cashflow_date",
+        )
+        flow_type = st.selectbox(
+            "구분",
+            ["입금", "출금"],
+            key="v9_cashflow_type",
+        )
+        flow_amount = st.number_input(
+            "금액 (원)",
+            min_value=0,
+            max_value=10_000_000_000,
+            value=0,
+            step=100_000,
+            key="v9_cashflow_amount",
+        )
+        flow_memo = st.text_input(
+            "메모 (선택)",
+            placeholder="예: 9월 월급 여유자금",
+            key="v9_cashflow_memo",
+        )
+
+        if st.button("💾 입출금 저장", use_container_width=True, key="save_v9_cashflow"):
+            if int(flow_amount) <= 0:
+                st.error("0원보다 큰 금액을 입력하세요.")
+            else:
+                new_flow = {
+                    "id": datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d%H%M%S%f"),
+                    "date": pd.Timestamp(flow_date).date().isoformat(),
+                    "type": flow_type,
+                    "amount": float(flow_amount),
+                    "memo": flow_memo.strip(),
+                }
+                updated_flows = _sanitize_v9_cashflows(v9_cashflows + [new_flow])
+                st.session_state["v9_cashflows"] = updated_flows
+                ok, msg = save_persisted_v9_cashflows(updated_flows)
+                st.session_state["v9_cashflow_persistence_ok"] = ok
+                st.session_state["v9_cashflow_persistence_status"] = msg
+                if ok:
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+        if v9_cashflows:
+            st.markdown("**최근 입출금 내역**")
+            recent_flows = list(reversed(v9_cashflows[-8:]))
+            recent_df = pd.DataFrame([
+                {
+                    "날짜": item["date"],
+                    "구분": item["type"],
+                    "금액": f"{float(item['amount']):,.0f}원",
+                    "메모": item.get("memo", ""),
+                }
+                for item in recent_flows
+            ])
+            st.dataframe(recent_df, use_container_width=True, hide_index=True)
+
+            delete_options = {
+                f"{item['date']} · {item['type']} · {float(item['amount']):,.0f}원"
+                + (f" · {item.get('memo','')}" if item.get('memo') else ""): item["id"]
+                for item in recent_flows
+            }
+            delete_label = st.selectbox(
+                "삭제할 내역",
+                list(delete_options.keys()),
+                key="v9_cashflow_delete_select",
+            )
+            if st.button("🗑️ 선택 내역 삭제", use_container_width=True, key="delete_v9_cashflow"):
+                delete_id = delete_options[delete_label]
+                updated_flows = [x for x in v9_cashflows if x.get("id") != delete_id]
+                st.session_state["v9_cashflows"] = updated_flows
+                ok, msg = save_persisted_v9_cashflows(updated_flows)
+                st.session_state["v9_cashflow_persistence_ok"] = ok
+                st.session_state["v9_cashflow_persistence_status"] = msg
+                if ok:
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+        persistence_msg = st.session_state.get("v9_cashflow_persistence_status", "")
+        if portfolio_persistence_enabled():
+            st.caption(f"🔐 암호화 영구저장 · {persistence_msg or '연결됨'}")
+        else:
+            st.warning("Streamlit Secrets의 GitHub/암호화 설정을 확인하세요.")
+
+
 df = full_df[
     (
         full_df[
@@ -2801,6 +3023,7 @@ portfolio_fx_snapshot = get_usdkrw_realtime_snapshot() if strategy_mode.startswi
 portfolio_fallback_fx = portfolio_fx_snapshot.get("rate")
 v9_fx_daily = pd.DataFrame(columns=["Date", "USD_KRW"])
 v9_quantity_overrides = {}
+net_external_cashflow = 0.0
 
 if strategy_mode.startswith("V9"):
     v9_open_positions = live_result.get("open_positions", [])
@@ -2821,8 +3044,11 @@ if strategy_mode.startswith("V9"):
         fx_daily=v9_fx_daily,
         fallback_fx=portfolio_fallback_fx,
     )
-    live_cash = float(actual_portfolio["cash"])
-    live_nav = float(actual_portfolio["nav"])
+    # 추가 입출금은 백테스트 엔진과 분리해 실전 현금/NAV에만 더합니다.
+    # 실제수량 보정과 함께 다음 신규매수 금액(NAV/7)의 기준이 됩니다.
+    net_external_cashflow = float(v9_cashflow_summary.get("net", 0.0))
+    live_cash = float(actual_portfolio["cash"]) + net_external_cashflow
+    live_nav = float(actual_portfolio["nav"]) + net_external_cashflow
     open_positions_display = build_v9_open_positions_table(
         v9_open_positions,
         current_close=live_close,
@@ -3257,12 +3483,13 @@ def render_compact_trading_dashboard():
             )
 
     # 핵심 포트폴리오 숫자는 한 줄로 압축합니다.
-    s1, s2, s3, s4, s5 = st.columns(5)
-    s1.metric("Confirmed NAV(확정 NAV)", f"{live_nav:,.0f}원", help="V9에서는 입력한 실제 보유수량을 반영합니다.")
+    s1, s2, s3, s4, s5, s6 = st.columns(6)
+    s1.metric("Confirmed NAV(확정 NAV)", f"{live_nav:,.0f}원", help="V9에서는 실제 보유수량과 누적 추가 입출금을 반영합니다.")
     s2.metric("Live NAV(실시간 NAV)", f"{realtime_nav:,.0f}원")
-    s3.metric("Cash(사용가능 현금)", f"{usable_cash:,.0f}원", help="실제 보유수량과 전략 기준수량의 매수금액 차이를 반영한 현금입니다.")
-    s4.metric("Slots(보유 슬롯)", f"{live_open_count} / {max_slots_for_live}")
-    s5.metric("MOC Today(오늘 MOC)", f"{moc_today_count}건")
+    s3.metric("Cash(사용가능 현금)", f"{usable_cash:,.0f}원", help="실제 보유수량 보정과 추가 입출금을 반영한 사용가능 현금입니다.")
+    s4.metric("Net Deposit(추가 순입금)", f"{net_external_cashflow:+,.0f}원" if strategy_mode.startswith("V9") else "-")
+    s5.metric("Slots(보유 슬롯)", f"{live_open_count} / {max_slots_for_live}")
+    s6.metric("MOC Today(오늘 MOC)", f"{moc_today_count}건")
 
     signal_date_text = (
         str(signal_source_date.date())
@@ -3329,6 +3556,12 @@ def render_compact_trading_dashboard():
     with st.expander("운용·신호 상세 정보"):
         st.write(f"운용 시작일: {start_date}")
         st.write(f"초기 투자금: {initial_capital:,.0f}원")
+        if strategy_mode.startswith("V9"):
+            st.write(
+                f"추가 입금/출금: 입금 {v9_cashflow_summary['deposits']:,.0f}원 · "
+                f"출금 {v9_cashflow_summary['withdrawals']:,.0f}원 · "
+                f"순입금 {v9_cashflow_summary['net']:+,.0f}원"
+            )
         st.write(f"미국 주문 대상일: {action_session.date()} · {session_status}")
         st.write(f"신호 기준일: {signal_date_text}")
         st.write(f"시장 상태: {market_state_text}")
@@ -3594,9 +3827,11 @@ k4.metric(
 st.divider()
 
 
-tab1, tab2, tab3, tab4, tab5, tab6 = (
+tab6, tab1, tab2, tab3, tab4, tab5 = (
     st.tabs(
         [
+
+            "📋 Trades(거래내역)",
 
             "📈 Equity Curve(자산곡선)",
 
@@ -3607,8 +3842,6 @@ tab1, tab2, tab3, tab4, tab5, tab6 = (
             "🌦 Market State(시장상태)",
 
             "📅 Yearly(연도별)",
-
-            "📋 Trades(거래내역)",
 
         ]
     )
