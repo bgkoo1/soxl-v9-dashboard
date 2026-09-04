@@ -45,16 +45,91 @@ st.markdown(
     """
     <style>
     .block-container {
-        padding-top: 1.8rem;
+        width: 100%;
+        max-width: 1600px;
+        padding-top: 1.2rem;
         padding-bottom: 3rem;
+        padding-left: clamp(0.8rem, 2.2vw, 2.4rem);
+        padding-right: clamp(0.8rem, 2.2vw, 2.4rem);
+    }
+
+    [data-testid="stMetric"] {
+        min-width: 0;
     }
 
     [data-testid="stMetricValue"] {
-        font-size: 1.65rem;
+        font-size: clamp(1.15rem, 1.8vw, 1.65rem);
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 
     [data-testid="stMetricLabel"] {
-        font-size: 0.9rem;
+        font-size: clamp(0.78rem, 1.1vw, 0.9rem);
+        white-space: normal;
+    }
+
+    [data-testid="stDataFrame"],
+    [data-testid="stDataEditor"] {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+
+    [data-testid="stHorizontalBlock"] {
+        gap: clamp(0.45rem, 1vw, 1rem);
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0.25rem;
+        overflow-x: auto;
+        scrollbar-width: thin;
+        flex-wrap: nowrap;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        flex: 0 0 auto;
+        white-space: nowrap;
+        padding-left: 0.7rem;
+        padding-right: 0.7rem;
+    }
+
+    @media (max-width: 900px) {
+        .block-container {
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+        }
+
+        h1 { font-size: 1.65rem !important; }
+        h2 { font-size: 1.3rem !important; }
+        h3 { font-size: 1.08rem !important; }
+
+        [data-testid="stMetricValue"] {
+            font-size: 1.12rem;
+        }
+
+        [data-testid="stMetricLabel"] {
+            font-size: 0.76rem;
+        }
+
+        .stButton > button,
+        .stDownloadButton > button {
+            width: 100%;
+            min-height: 2.55rem;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .block-container {
+            padding-top: 0.7rem;
+            padding-left: 0.55rem;
+            padding-right: 0.55rem;
+        }
+
+        .stTabs [data-baseweb="tab"] {
+            font-size: 0.82rem;
+            padding-left: 0.45rem;
+            padding-right: 0.45rem;
+        }
     }
     </style>
     """,
@@ -473,10 +548,54 @@ def _sanitize_v9_cashflows(items):
     return cleaned
 
 
+
+def _sanitize_v9_trade_overrides(items):
+    """실제 체결 거래 오버라이드를 안전한 형식으로 정리합니다."""
+    cleaned = {}
+    if not isinstance(items, dict):
+        return cleaned
+
+    allowed_strategies = {
+        "일반 LOC(+2.7%)",
+        "방어 LOC(+$0.10)",
+        "TIME/MOC",
+        "수동 매도",
+        "기타",
+    }
+
+    for key, item in items.items():
+        if not isinstance(item, dict):
+            continue
+        try:
+            entry_date = pd.Timestamp(item.get("entry_date")).date().isoformat()
+            exit_date = pd.Timestamp(item.get("exit_date")).date().isoformat()
+            entry_price = float(item.get("entry_price"))
+            exit_price = float(item.get("exit_price"))
+            quantity = max(1, int(round(float(item.get("quantity")))))
+            exit_strategy = str(item.get("exit_strategy", "기타")).strip()
+        except Exception:
+            continue
+
+        if entry_price <= 0 or exit_price <= 0:
+            continue
+        if exit_strategy not in allowed_strategies:
+            exit_strategy = "기타"
+
+        cleaned[str(key)] = {
+            "entry_date": entry_date,
+            "exit_date": exit_date,
+            "entry_price": round(entry_price, 6),
+            "exit_price": round(exit_price, 6),
+            "quantity": quantity,
+            "exit_strategy": exit_strategy,
+        }
+
+    return cleaned
+
 def _load_persisted_v9_state():
-    """GitHub 암호화 파일에서 실제수량 + 추가 입출금 장부를 함께 복원합니다."""
+    """GitHub 암호화 파일에서 실제수량 + 입출금 + 실제 체결값을 함께 복원합니다."""
     config = _portfolio_persistence_config()
-    empty = {"quantities": {}, "cashflows": []}
+    empty = {"quantities": {}, "cashflows": [], "trade_overrides": {}}
     if config is None:
         return empty, "Secrets 미설정"
 
@@ -508,9 +627,11 @@ def _load_persisted_v9_state():
                 continue
 
         cashflows = _sanitize_v9_cashflows(payload.get("cashflows", []))
+        trade_overrides = _sanitize_v9_trade_overrides(payload.get("trade_overrides", {}))
         return {
             "quantities": cleaned_qty,
             "cashflows": cashflows,
+            "trade_overrides": trade_overrides,
         }, "GitHub 암호화 저장값 불러옴"
     except InvalidToken:
         return empty, "암호화 키가 저장 데이터와 일치하지 않음"
@@ -518,8 +639,8 @@ def _load_persisted_v9_state():
         return empty, f"영구 저장 불러오기 실패: {e}"
 
 
-def _save_persisted_v9_state(quantity_map=None, cashflows=None):
-    """실제수량과 입출금 장부를 하나의 암호화 파일로 저장합니다."""
+def _save_persisted_v9_state(quantity_map=None, cashflows=None, trade_overrides=None):
+    """실제수량·입출금·실제 체결값을 하나의 암호화 파일로 저장합니다."""
     config = _portfolio_persistence_config()
     if config is None:
         return False, "Streamlit Secrets에 GitHub/암호화 설정이 없습니다."
@@ -531,12 +652,14 @@ def _save_persisted_v9_state(quantity_map=None, cashflows=None):
         except (TypeError, ValueError):
             continue
     cleaned_cashflows = _sanitize_v9_cashflows(cashflows)
+    cleaned_trade_overrides = _sanitize_v9_trade_overrides(trade_overrides)
 
     payload = {
-        "version": 2,
+        "version": 3,
         "updated_at": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(),
         "quantities": cleaned_qty,
         "cashflows": cleaned_cashflows,
+        "trade_overrides": cleaned_trade_overrides,
     }
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     encrypted = Fernet(config["key"].encode("utf-8")).encrypt(raw)
@@ -586,7 +709,7 @@ def _save_persisted_v9_state(quantity_map=None, cashflows=None):
                 timeout=15,
             )
         response.raise_for_status()
-        return True, "실제 보유수량과 입출금 내역을 암호화하여 영구 저장했습니다."
+        return True, "실제 보유수량·입출금·실제 거래값을 암호화하여 영구 저장했습니다."
     except Exception as e:
         return False, f"영구 저장 실패: {e}"
 
@@ -595,6 +718,7 @@ def load_persisted_v9_quantities():
     """기존 호출부 호환용: 저장 상태에서 실제 보유수량만 반환합니다."""
     state, status = _load_persisted_v9_state()
     st.session_state["v9_cashflows"] = state.get("cashflows", [])
+    st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
     return state.get("quantities", {}), status
 
 
@@ -603,6 +727,7 @@ def load_persisted_v9_cashflows():
     state, status = _load_persisted_v9_state()
     st.session_state["v9_quantity_overrides"] = state.get("quantities", {})
     st.session_state["v9_cashflows"] = state.get("cashflows", [])
+    st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
     st.session_state["v9_quantity_persistence_status"] = status
     return state.get("cashflows", []), status
 
@@ -612,6 +737,7 @@ def save_persisted_v9_quantities(quantity_map):
     return _save_persisted_v9_state(
         quantity_map=quantity_map,
         cashflows=st.session_state.get("v9_cashflows", []),
+        trade_overrides=st.session_state.get("v9_trade_overrides", {}),
     )
 
 
@@ -620,8 +746,31 @@ def save_persisted_v9_cashflows(cashflows):
     return _save_persisted_v9_state(
         quantity_map=st.session_state.get("v9_quantity_overrides", {}),
         cashflows=cashflows,
+        trade_overrides=st.session_state.get("v9_trade_overrides", {}),
     )
 
+
+
+def load_persisted_v9_trade_overrides():
+    """실제 체결 거래 오버라이드를 불러옵니다."""
+    state, status = _load_persisted_v9_state()
+    st.session_state["v9_quantity_overrides"] = state.get("quantities", {})
+    st.session_state["v9_cashflows"] = state.get("cashflows", [])
+    st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
+    return state.get("trade_overrides", {}), status
+
+
+def save_persisted_v9_trade_overrides(trade_overrides, quantity_map=None):
+    """실제 체결 거래 저장 시 수량/입출금 장부를 함께 보존합니다."""
+    return _save_persisted_v9_state(
+        quantity_map=(
+            quantity_map
+            if quantity_map is not None
+            else st.session_state.get("v9_quantity_overrides", {})
+        ),
+        cashflows=st.session_state.get("v9_cashflows", []),
+        trade_overrides=trade_overrides,
+    )
 
 def summarize_v9_cashflows(cashflows, as_of_date=None):
     """지정일 현재 추가 입금/출금 및 순입금을 계산합니다."""
@@ -1223,6 +1372,143 @@ def calculate_v9_actual_portfolio(
         "nav": float(adjusted_cash + confirmed_position_value),
         "positions": pd.DataFrame(rows),
     }
+
+
+def v9_exit_strategy_label(exit_type):
+    mapping = {
+        "TARGET": "일반 LOC(+2.7%)",
+        "NORMAL_LOC": "일반 LOC(+2.7%)",
+        "TB3_DYN_LOC": "방어 LOC(+$0.10)",
+        "TIME": "TIME/MOC",
+    }
+    return mapping.get(str(exit_type), "기타")
+
+
+def build_v9_actual_trade_records(
+    trades_df,
+    qty_overrides=None,
+    trade_overrides=None,
+    fx_daily=None,
+    fallback_fx=None,
+):
+    """전략 거래를 기본값으로 두고 저장된 실제 체결값을 덮어쓴 거래표를 만듭니다."""
+    qty_overrides = qty_overrides or {}
+    trade_overrides = _sanitize_v9_trade_overrides(trade_overrides or {})
+    rows = []
+
+    for _, trade in (trades_df if trades_df is not None else pd.DataFrame()).iterrows():
+        strategy_entry_date = pd.Timestamp(trade["Entry_Date"]).normalize()
+        strategy_exit_date = pd.Timestamp(trade["Exit_Date"]).normalize()
+        strategy_entry_price = float(trade["Entry_Price"])
+        strategy_exit_price = float(trade["Exit_Price"])
+        invested = float(trade.get("Invested", 0.0))
+        key = v9_position_key({
+            "entry_date": strategy_entry_date,
+            "entry_price": strategy_entry_price,
+        })
+
+        strategy_fx = lookup_entry_fx(strategy_entry_date, fx_daily, fallback_fx)
+        strategy_qty = None
+        if strategy_fx is not None and strategy_fx > 0 and strategy_entry_price > 0:
+            strategy_qty = max(1, int(round(invested / (strategy_entry_price * strategy_fx))))
+
+        default_qty = strategy_qty
+        if key in qty_overrides:
+            try:
+                default_qty = max(1, int(round(float(qty_overrides[key]))))
+            except Exception:
+                pass
+        if default_qty is None:
+            default_qty = 1
+
+        defaults = {
+            "entry_date": strategy_entry_date.date().isoformat(),
+            "exit_date": strategy_exit_date.date().isoformat(),
+            "entry_price": strategy_entry_price,
+            "exit_price": strategy_exit_price,
+            "quantity": default_qty,
+            "exit_strategy": v9_exit_strategy_label(trade.get("Exit_Type")),
+        }
+        actual = dict(defaults)
+        if key in trade_overrides:
+            actual.update(trade_overrides[key])
+
+        actual_entry_date = pd.Timestamp(actual["entry_date"]).normalize()
+        actual_exit_date = pd.Timestamp(actual["exit_date"]).normalize()
+        actual_entry_price = float(actual["entry_price"])
+        actual_exit_price = float(actual["exit_price"])
+        actual_qty = max(1, int(round(float(actual["quantity"]))))
+        actual_fx = lookup_entry_fx(actual_entry_date, fx_daily, fallback_fx)
+
+        actual_invested = None
+        actual_profit = None
+        actual_return = (
+            actual_exit_price / actual_entry_price - 1
+            if actual_entry_price > 0
+            else None
+        )
+        if actual_fx is not None and actual_fx > 0 and actual_entry_price > 0:
+            actual_invested = actual_qty * actual_entry_price * actual_fx
+            actual_profit = actual_qty * (actual_exit_price - actual_entry_price) * actual_fx
+
+        changed = key in trade_overrides
+        rows.append({
+            "_key": key,
+            "전략 매수일": strategy_entry_date.date(),
+            "전략 매도일": strategy_exit_date.date(),
+            "전략 매수가": strategy_entry_price,
+            "전략 매도가": strategy_exit_price,
+            "전략 수량": strategy_qty if strategy_qty is not None else default_qty,
+            "전략 매도전략": v9_exit_strategy_label(trade.get("Exit_Type")),
+            "매수일": actual_entry_date.date(),
+            "매도일": actual_exit_date.date(),
+            "매수가($)": actual_entry_price,
+            "매도가($)": actual_exit_price,
+            "수량(주)": actual_qty,
+            "매도전략": str(actual["exit_strategy"]),
+            "적용환율": actual_fx,
+            "투자금(원)": actual_invested,
+            "수익률": actual_return,
+            "손익(원)": actual_profit,
+            "전략손익(원)": float(trade.get("Profit", 0.0)),
+            "보유 거래일": int(trade.get("Holding_Days", 0)),
+            "수정": "수정됨" if changed else "전략값",
+        })
+
+    return pd.DataFrame(rows)
+
+
+def calculate_v9_realized_execution_adjustment(
+    trades_df,
+    trade_overrides,
+    qty_overrides=None,
+    fx_daily=None,
+    fallback_fx=None,
+):
+    """사용자가 수정·저장한 청산거래만 실전 현금/NAV에 반영할 손익 차이를 계산합니다."""
+    cleaned = _sanitize_v9_trade_overrides(trade_overrides or {})
+    if not cleaned or trades_df is None or trades_df.empty:
+        return 0.0
+
+    actual_records = build_v9_actual_trade_records(
+        trades_df,
+        qty_overrides=qty_overrides,
+        trade_overrides=cleaned,
+        fx_daily=fx_daily,
+        fallback_fx=fallback_fx,
+    )
+    if actual_records.empty:
+        return 0.0
+
+    adjusted = 0.0
+    for _, row in actual_records.iterrows():
+        if row["_key"] not in cleaned:
+            continue
+        actual_profit = row.get("손익(원)")
+        if actual_profit is None or pd.isna(actual_profit):
+            continue
+        adjusted += float(actual_profit) - float(row.get("전략손익(원)", 0.0))
+    return float(adjusted)
 
 
 def build_v9_quantity_editor_rows(open_positions, qty_overrides, fx_daily=None, fallback_fx=None):
@@ -2782,7 +3068,7 @@ if strategy_mode.startswith("V9"):
                 }
                 for item in recent_flows
             ])
-            st.dataframe(recent_df, use_container_width=True, hide_index=True)
+            st.dataframe(recent_df, use_container_width=True, hide_index=True, height=min(320, max(160, 36 * (len(recent_df) + 1))))
 
             delete_options = {
                 f"{item['date']} · {item['type']} · {float(item['amount']):,.0f}원"
@@ -3023,9 +3309,18 @@ portfolio_fx_snapshot = get_usdkrw_realtime_snapshot() if strategy_mode.startswi
 portfolio_fallback_fx = portfolio_fx_snapshot.get("rate")
 v9_fx_daily = pd.DataFrame(columns=["Date", "USD_KRW"])
 v9_quantity_overrides = {}
+v9_trade_overrides = st.session_state.get("v9_trade_overrides", {})
+realized_execution_adjustment = 0.0
 net_external_cashflow = 0.0
 
 if strategy_mode.startswith("V9"):
+    if "v9_trade_overrides" not in st.session_state:
+        loaded_trade_overrides, trade_override_status = load_persisted_v9_trade_overrides()
+        st.session_state["v9_trade_overrides"] = loaded_trade_overrides
+        st.session_state["v9_trade_persistence_status"] = trade_override_status
+    v9_trade_overrides = _sanitize_v9_trade_overrides(
+        st.session_state.get("v9_trade_overrides", {})
+    )
     v9_open_positions = live_result.get("open_positions", [])
     if v9_open_positions:
         earliest_entry = min(pd.Timestamp(p["entry_date"]) for p in v9_open_positions)
@@ -3044,11 +3339,43 @@ if strategy_mode.startswith("V9"):
         fx_daily=v9_fx_daily,
         fallback_fx=portfolio_fallback_fx,
     )
+    # 사용자가 수정·저장한 과거 청산거래의 실제 체결 손익 차이도 실전 현금/NAV에 반영합니다.
+    # 백테스트 통계는 순수 V9 그대로 유지합니다.
+    if v9_trade_overrides and not live_result.get("trades", pd.DataFrame()).empty:
+        override_dates = []
+        for item in v9_trade_overrides.values():
+            try:
+                override_dates.append(pd.Timestamp(item.get("entry_date")))
+            except Exception:
+                pass
+        trade_model_dates = pd.to_datetime(live_result["trades"]["Entry_Date"], errors="coerce").dropna()
+        if not trade_model_dates.empty:
+            fx_start = min(override_dates + [trade_model_dates.min()]) if override_dates else trade_model_dates.min()
+            fx_end = max(override_dates + [trade_model_dates.max()]) if override_dates else trade_model_dates.max()
+            execution_fx_daily = get_usdkrw_daily_rates(fx_start, fx_end)
+        else:
+            execution_fx_daily = v9_fx_daily
+        realized_execution_adjustment = calculate_v9_realized_execution_adjustment(
+            live_result["trades"],
+            trade_overrides=v9_trade_overrides,
+            qty_overrides=v9_quantity_overrides,
+            fx_daily=execution_fx_daily,
+            fallback_fx=portfolio_fallback_fx,
+        )
+
     # 추가 입출금은 백테스트 엔진과 분리해 실전 현금/NAV에만 더합니다.
-    # 실제수량 보정과 함께 다음 신규매수 금액(NAV/7)의 기준이 됩니다.
+    # 실제수량·실제 체결 보정과 함께 다음 신규매수 금액(NAV/7)의 기준이 됩니다.
     net_external_cashflow = float(v9_cashflow_summary.get("net", 0.0))
-    live_cash = float(actual_portfolio["cash"]) + net_external_cashflow
-    live_nav = float(actual_portfolio["nav"]) + net_external_cashflow
+    live_cash = (
+        float(actual_portfolio["cash"])
+        + realized_execution_adjustment
+        + net_external_cashflow
+    )
+    live_nav = (
+        float(actual_portfolio["nav"])
+        + realized_execution_adjustment
+        + net_external_cashflow
+    )
     open_positions_display = build_v9_open_positions_table(
         v9_open_positions,
         current_close=live_close,
@@ -3335,6 +3662,28 @@ st.markdown(
         background: rgba(128,128,128,0.055);
         font-size: 0.86rem;
         line-height: 1.45;
+        overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 900px) {
+        .compact-card {
+            min-height: auto;
+            padding: 0.85rem 0.9rem;
+        }
+        .action-word { font-size: 1.42rem; }
+        .action-main-value { font-size: 1.52rem; }
+        .live-price { font-size: 1.58rem; }
+        .live-grid { grid-template-columns: 1fr; gap: 0.45rem; }
+        .signal-card { min-height: auto; }
+        .status-strip { font-size: 0.78rem; }
+    }
+
+    @media (max-width: 640px) {
+        .action-word { font-size: 1.28rem; }
+        .action-main-value { font-size: 1.35rem; }
+        .live-price-row { align-items: flex-start; flex-direction: column; gap: 0.2rem; }
+        .live-price { font-size: 1.45rem; }
+        .signal-status { font-size: 1.1rem; }
     }
     </style>
     """,
@@ -3562,6 +3911,10 @@ def render_compact_trading_dashboard():
                 f"출금 {v9_cashflow_summary['withdrawals']:,.0f}원 · "
                 f"순입금 {v9_cashflow_summary['net']:+,.0f}원"
             )
+            st.write(
+                f"실제 체결 보정손익: {realized_execution_adjustment:+,.0f}원 "
+                f"({len(v9_trade_overrides):,}건 수정 저장)"
+            )
         st.write(f"미국 주문 대상일: {action_session.date()} · {session_status}")
         st.write(f"신호 기준일: {signal_date_text}")
         st.write(f"시장 상태: {market_state_text}")
@@ -3754,6 +4107,7 @@ def render_compact_trading_dashboard():
             position_table,
             use_container_width=True,
             hide_index=True,
+            height=min(520, max(220, 38 * (len(position_table) + 1))),
         )
     if strategy_mode.startswith("V9"):
         st.caption(
@@ -4237,16 +4591,12 @@ with tab4:
     )
 
 
+    ma_display_table = format_regime_table(ma_summary)
     st.dataframe(
-
-        format_regime_table(
-            ma_summary
-        ),
-
+        ma_display_table,
         use_container_width=True,
-
         hide_index=True,
-
+        height=min(420, max(220, 36 * (len(ma_display_table) + 1))),
     )
 
 
@@ -4313,16 +4663,12 @@ with tab4:
     )
 
 
+    momentum_display_table = format_regime_table(momentum_summary)
     st.dataframe(
-
-        format_regime_table(
-            momentum_summary
-        ),
-
+        momentum_display_table,
         use_container_width=True,
-
         hide_index=True,
-
+        height=min(420, max(220, 36 * (len(momentum_display_table) + 1))),
     )
 
 
@@ -4689,13 +5035,10 @@ with tab4:
 
 
     st.dataframe(
-
         combo_display,
-
         use_container_width=True,
-
         hide_index=True,
-
+        height=min(560, max(260, 36 * (len(combo_display) + 1))),
     )
 
 
@@ -4788,13 +5131,10 @@ with tab5:
 
 
     st.dataframe(
-
         yearly_display,
-
         use_container_width=True,
-
         hide_index=True,
-
+        height=min(520, max(220, 36 * (len(yearly_display) + 1))),
     )
 
 
@@ -4804,114 +5144,334 @@ with tab5:
 
 with tab6:
 
-    display_trades = trades.copy()
+    if strategy_mode.startswith("V9"):
+        st.subheader("📋 Actual Trades(실제 거래내역)")
+        st.caption(
+            "전략 체결값이 기본으로 입력되어 있으며, 실제 매매가 달랐던 거래만 날짜·가격·수량·매도전략을 수정해 저장할 수 있습니다. "
+            "저장한 실제 체결 손익은 실전 현금·NAV·다음 매수금액에 반영되지만 백테스트 CAGR/MDD에는 영향을 주지 않습니다."
+        )
 
-    exit_label_map = {
-        "TARGET": "TARGET(목표수익 매도)",
-        "NORMAL_LOC": "LOC(+2.7% 목표수익 매도)",
-        "TB3_DYN_LOC": "방어 LOC(매수가 + $0.10 매도)",
-        "TIME": "TIME(기한 만료 매도)",
-        "END": "END(검증 종료 시 보유)",
-    }
+        if "v9_trade_overrides" not in st.session_state:
+            loaded_trade_overrides, trade_override_status = load_persisted_v9_trade_overrides()
+            st.session_state["v9_trade_overrides"] = loaded_trade_overrides
+            st.session_state["v9_trade_persistence_status"] = trade_override_status
 
-    display_trades["매수일"] = pd.to_datetime(display_trades["Entry_Date"]).dt.date
-    display_trades["매도일"] = pd.to_datetime(display_trades["Exit_Date"]).dt.date
-    display_trades["매수가"] = display_trades["Entry_Price"].map(lambda x: f"${x:,.2f}")
-    display_trades["매도가"] = display_trades["Exit_Price"].map(lambda x: f"${x:,.2f}")
+        trade_overrides_for_editor = _sanitize_v9_trade_overrides(
+            st.session_state.get("v9_trade_overrides", {})
+        )
+        qty_map_for_trades = dict(st.session_state.get("v9_quantity_overrides", {}))
 
-    # V9은 실제 저장 수량을 Trades까지 이어서 표시합니다.
-    # 저장값이 없는 과거 티어는 매수일 환율을 이용한 전략 기준 정수수량을 표시합니다.
-    if strategy_mode.startswith("V9") and not display_trades.empty:
-        trade_start = pd.to_datetime(display_trades["Entry_Date"]).min()
-        trade_end = pd.to_datetime(display_trades["Entry_Date"]).max()
-        trades_fx_daily = get_usdkrw_daily_rates(trade_start, trade_end)
-        qty_map_for_trades = st.session_state.get("v9_quantity_overrides", {})
-
-        def _trade_qty(row):
-            pseudo_pos = {
-                "entry_date": pd.Timestamp(row["Entry_Date"]),
-                "entry_price": float(row["Entry_Price"]),
-            }
-            key = v9_position_key(pseudo_pos)
-            if key in qty_map_for_trades:
+        if trades.empty:
+            st.info("표시할 청산 거래가 없습니다.")
+        else:
+            trade_model_dates = pd.to_datetime(trades["Entry_Date"], errors="coerce").dropna()
+            override_entry_dates = []
+            for item in trade_overrides_for_editor.values():
                 try:
-                    return max(1, int(round(float(qty_map_for_trades[key]))))
-                except (TypeError, ValueError):
+                    override_entry_dates.append(pd.Timestamp(item.get("entry_date")))
+                except Exception:
                     pass
-            entry_date = pd.Timestamp(row["Entry_Date"]).normalize()
-            entry_price = float(row["Entry_Price"])
-            invested = float(row["Invested"])
-            entry_fx = lookup_entry_fx(entry_date, trades_fx_daily, portfolio_fallback_fx)
-            if entry_fx is not None and entry_fx > 0 and entry_price > 0:
-                return max(1, int(round(invested / (entry_price * entry_fx))))
-            return None
 
-        display_trades["수량"] = display_trades.apply(_trade_qty, axis=1)
-        display_trades["수량"] = display_trades["수량"].map(
-            lambda x: f"{int(x):,}주" if pd.notna(x) else "계산 불가"
-        )
+            if not trade_model_dates.empty:
+                fx_start = min(override_entry_dates + [trade_model_dates.min()]) if override_entry_dates else trade_model_dates.min()
+                fx_end = max(override_entry_dates + [trade_model_dates.max()]) if override_entry_dates else trade_model_dates.max()
+                trades_fx_daily = get_usdkrw_daily_rates(fx_start, fx_end)
+            else:
+                trades_fx_daily = pd.DataFrame(columns=["Date", "USD_KRW"])
+
+            actual_records_all = build_v9_actual_trade_records(
+                trades,
+                qty_overrides=qty_map_for_trades,
+                trade_overrides=trade_overrides_for_editor,
+                fx_daily=trades_fx_daily,
+                fallback_fx=portfolio_fallback_fx,
+            )
+
+            view_options = ["최근 30건", "최근 100건", "전체"]
+            view_choice = st.selectbox(
+                "표시 범위",
+                view_options,
+                index=1,
+                key="v9_actual_trade_view_range",
+                label_visibility="collapsed",
+            )
+
+            actual_records = actual_records_all.sort_values(
+                ["매도일", "매수일"], ascending=[False, False]
+            )
+            if view_choice == "최근 30건":
+                actual_records = actual_records.head(30)
+            elif view_choice == "최근 100건":
+                actual_records = actual_records.head(100)
+
+            editor_cols = [
+                "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
+                "매도전략", "투자금(원)", "수익률", "손익(원)", "수정",
+            ]
+            editor_df = actual_records.set_index("_key")[editor_cols].copy()
+            editor_df["투자금(원)"] = editor_df["투자금(원)"].map(
+                lambda x: f"{x:,.0f}원" if pd.notna(x) else "환율 조회 필요"
+            )
+            editor_df["수익률"] = editor_df["수익률"].map(
+                lambda x: f"{x:.2%}" if pd.notna(x) else "계산 불가"
+            )
+            editor_df["손익(원)"] = editor_df["손익(원)"].map(
+                lambda x: f"{x:+,.0f}원" if pd.notna(x) else "환율 조회 필요"
+            )
+
+            editor_height = min(700, max(280, 42 * (len(editor_df) + 1)))
+            edited_trades = st.data_editor(
+                editor_df,
+                use_container_width=True,
+                hide_index=True,
+                height=editor_height,
+                row_height=38,
+                disabled=["투자금(원)", "수익률", "손익(원)", "수정"],
+                column_config={
+                    "매수일": st.column_config.DateColumn("✏️ 매수일", format="YYYY-MM-DD", width="small"),
+                    "매도일": st.column_config.DateColumn("✏️ 매도일", format="YYYY-MM-DD", width="small"),
+                    "매수가($)": st.column_config.NumberColumn("✏️ 매수가", min_value=0.01, step=0.01, format="$%.2f", width="small"),
+                    "매도가($)": st.column_config.NumberColumn("✏️ 매도가", min_value=0.01, step=0.01, format="$%.2f", width="small"),
+                    "수량(주)": st.column_config.NumberColumn("✏️ 수량", min_value=1, step=1, format="%d주", width="small"),
+                    "매도전략": st.column_config.SelectboxColumn(
+                        "✏️ 실제 매도전략",
+                        options=[
+                            "일반 LOC(+2.7%)",
+                            "방어 LOC(+$0.10)",
+                            "TIME/MOC",
+                            "수동 매도",
+                            "기타",
+                        ],
+                        width="medium",
+                    ),
+                    "투자금(원)": st.column_config.TextColumn("투자금", width="medium"),
+                    "수익률": st.column_config.TextColumn("수익률", width="small"),
+                    "손익(원)": st.column_config.TextColumn("손익", width="medium"),
+                    "수정": st.column_config.TextColumn("상태", width="small"),
+                },
+                key="v9_actual_trades_editor",
+            )
+
+            st.caption("가격·수량을 수정한 뒤 저장하면 표가 다시 계산되어 투자금·수익률·손익이 갱신됩니다.")
+
+            save_col, reset_col = st.columns(2)
+
+            if save_col.button(
+                "💾 실제 거래 변경 저장",
+                use_container_width=True,
+                key="save_v9_actual_trades",
+            ):
+                baseline = actual_records_all.set_index("_key")
+                displayed_keys = set(editor_df.index.astype(str))
+                new_overrides = {
+                    k: v for k, v in trade_overrides_for_editor.items()
+                    if k not in displayed_keys
+                }
+                updated_qty_map = dict(qty_map_for_trades)
+                validation_error = None
+
+                for key, row in edited_trades.iterrows():
+                    key = str(key)
+                    if key not in baseline.index:
+                        continue
+                    base = baseline.loc[key]
+                    try:
+                        actual_entry_date = pd.Timestamp(row["매수일"]).date()
+                        actual_exit_date = pd.Timestamp(row["매도일"]).date()
+                        actual_entry_price = float(row["매수가($)"])
+                        actual_exit_price = float(row["매도가($)"])
+                        actual_qty = max(1, int(round(float(row["수량(주)"]))))
+                        actual_strategy = str(row["매도전략"])
+                    except Exception:
+                        validation_error = "날짜·가격·수량 입력값을 확인해주세요."
+                        break
+
+                    if actual_exit_date < actual_entry_date:
+                        validation_error = f"{actual_entry_date} 거래의 매도일이 매수일보다 빠릅니다."
+                        break
+                    if actual_entry_price <= 0 or actual_exit_price <= 0:
+                        validation_error = "매수가와 매도가는 0보다 커야 합니다."
+                        break
+
+                    strategy_entry_date = pd.Timestamp(base["전략 매수일"]).date()
+                    strategy_exit_date = pd.Timestamp(base["전략 매도일"]).date()
+                    strategy_entry_price = float(base["전략 매수가"])
+                    strategy_exit_price = float(base["전략 매도가"])
+                    strategy_qty = max(1, int(round(float(base["전략 수량"]))))
+                    strategy_exit_strategy = str(base["전략 매도전략"])
+
+                    changed = any([
+                        actual_entry_date != strategy_entry_date,
+                        actual_exit_date != strategy_exit_date,
+                        abs(actual_entry_price - strategy_entry_price) > 1e-9,
+                        abs(actual_exit_price - strategy_exit_price) > 1e-9,
+                        actual_qty != strategy_qty,
+                        actual_strategy != strategy_exit_strategy,
+                    ])
+
+                    if changed:
+                        new_overrides[key] = {
+                            "entry_date": actual_entry_date.isoformat(),
+                            "exit_date": actual_exit_date.isoformat(),
+                            "entry_price": actual_entry_price,
+                            "exit_price": actual_exit_price,
+                            "quantity": actual_qty,
+                            "exit_strategy": actual_strategy,
+                        }
+                        updated_qty_map[key] = actual_qty
+                    else:
+                        new_overrides.pop(key, None)
+                        # 표시된 청산거래가 전략값으로 복원되면 과거 실제수량 오버라이드도 함께 해제합니다.
+                        updated_qty_map.pop(key, None)
+
+                if validation_error:
+                    st.error(validation_error)
+                else:
+                    st.session_state["v9_trade_overrides"] = new_overrides
+                    st.session_state["v9_quantity_overrides"] = updated_qty_map
+                    ok, msg = save_persisted_v9_trade_overrides(
+                        new_overrides, quantity_map=updated_qty_map
+                    )
+                    st.session_state["v9_trade_persistence_ok"] = ok
+                    st.session_state["v9_trade_persistence_status"] = msg
+                    if ok:
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+            if reset_col.button(
+                "↩️ 표시 거래 전략값으로 복원",
+                use_container_width=True,
+                key="reset_v9_actual_trades",
+            ):
+                displayed_keys = set(editor_df.index.astype(str))
+                reset_overrides = {
+                    k: v for k, v in trade_overrides_for_editor.items()
+                    if k not in displayed_keys
+                }
+                reset_qty_map = dict(qty_map_for_trades)
+                for key in displayed_keys:
+                    reset_qty_map.pop(key, None)
+                st.session_state["v9_trade_overrides"] = reset_overrides
+                st.session_state["v9_quantity_overrides"] = reset_qty_map
+                ok, msg = save_persisted_v9_trade_overrides(
+                    reset_overrides, quantity_map=reset_qty_map
+                )
+                st.session_state["v9_trade_persistence_ok"] = ok
+                st.session_state["v9_trade_persistence_status"] = msg
+                if ok:
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+            persistence_msg = st.session_state.get("v9_trade_persistence_status", "")
+            if portfolio_persistence_enabled():
+                if st.session_state.get("v9_trade_persistence_ok") is False:
+                    st.error(f"☁️ 실제 거래 영구저장 오류 · {persistence_msg}")
+                else:
+                    st.caption(
+                        f"🔐 실제 거래 수정값 영구저장 연결됨 · "
+                        f"{len(trade_overrides_for_editor):,}건 수정 저장 · "
+                        f"{persistence_msg or 'GitHub 암호화 저장소 사용'}"
+                    )
+            else:
+                st.warning("현재는 세션 저장만 사용 중입니다. Streamlit Secrets의 GitHub/암호화 설정을 확인하세요.")
+
+            # 모바일/좁은 화면에서는 핵심 결과만 빠르게 볼 수 있도록 손익 요약표를 별도로 제공합니다.
+            st.markdown("#### 실제 체결 손익 요약")
+            summary_display = actual_records[[
+                "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
+                "수익률", "손익(원)", "매도전략", "수정",
+            ]].copy()
+            summary_display["매수가($)"] = summary_display["매수가($)"].map(lambda x: f"${x:,.2f}")
+            summary_display["매도가($)"] = summary_display["매도가($)"].map(lambda x: f"${x:,.2f}")
+            summary_display["수량(주)"] = summary_display["수량(주)"].map(lambda x: f"{int(x):,}주")
+            summary_display["수익률"] = summary_display["수익률"].map(
+                lambda x: f"{x:.2%}" if pd.notna(x) else "계산 불가"
+            )
+            summary_display["손익(원)"] = summary_display["손익(원)"].map(
+                lambda x: f"{x:+,.0f}원" if pd.notna(x) else "환율 조회 필요"
+            )
+            st.dataframe(
+                summary_display,
+                use_container_width=True,
+                hide_index=True,
+                height=min(620, max(240, 38 * (len(summary_display) + 1))),
+            )
+
+            with st.expander("전략 기준값과 비교"):
+                strategy_compare = actual_records[[
+                    "전략 매수일", "전략 매도일", "전략 매수가", "전략 매도가",
+                    "전략 수량", "전략 매도전략", "수정",
+                ]].copy()
+                strategy_compare["전략 매수가"] = strategy_compare["전략 매수가"].map(lambda x: f"${x:,.2f}")
+                strategy_compare["전략 매도가"] = strategy_compare["전략 매도가"].map(lambda x: f"${x:,.2f}")
+                strategy_compare["전략 수량"] = strategy_compare["전략 수량"].map(lambda x: f"{int(x):,}주")
+                st.dataframe(
+                    strategy_compare,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(520, max(220, 36 * (len(strategy_compare) + 1))),
+                )
+
+            download_actual = actual_records_all[[
+                "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
+                "매도전략", "적용환율", "투자금(원)", "수익률", "손익(원)", "수정",
+            ]].copy()
+            csv_actual = download_actual.to_csv(index=False).encode("utf-8-sig")
+            csv_strategy = trades.to_csv(index=False).encode("utf-8-sig")
+            dl1, dl2 = st.columns(2)
+            dl1.download_button(
+                "📥 실제 거래내역 CSV",
+                data=csv_actual,
+                file_name="SOXL_actual_trades.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+            dl2.download_button(
+                "📥 전략 원본 거래내역 CSV",
+                data=csv_strategy,
+                file_name="SOXL_strategy_trades.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
     else:
-        # V7/V8 등 기존 전략은 엔진의 합성 shares를 실주식 수량으로 오해하지 않도록 표시하지 않습니다.
-        display_trades["수량"] = "-"
-    if "Active_Target_Price" in display_trades.columns:
-        target_series = display_trades["Active_Target_Price"]
-    elif "Target_Price" in display_trades.columns:
-        target_series = display_trades["Target_Price"]
-    else:
-        target_series = display_trades["Entry_Price"] * (1 + BASE_TARGET_RETURN)
-    display_trades["목표 매도가"] = target_series.map(lambda x: f"${x:,.2f}")
-    display_trades["투자금"] = display_trades["Invested"].map(lambda x: f"{x:,.0f}원")
-    display_trades["수익률"] = display_trades["Return"].map(lambda x: f"{x:.2%}")
-    display_trades["손익"] = display_trades["Profit"].map(lambda x: f"{x:,.0f}원")
-    display_trades["보유 거래일"] = display_trades["Holding_Days"].map(lambda x: f"{int(x)}일")
-    display_trades["매도 이유"] = display_trades["Exit_Type"].map(exit_label_map).fillna(display_trades["Exit_Type"])
-
-    display_trades = display_trades[[
-        "매수일",
-        "매도일",
-        "매수가",
-        "매도가",
-        "목표 매도가",
-        "수량",
-        "투자금",
-        "수익률",
-        "손익",
-        "보유 거래일",
-        "매도 이유",
-    ]]
-
-    st.dataframe(
-        display_trades,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-
-    csv = (
-        trades
-        .to_csv(
-            index=False
+        # V7/V8/Custom은 기존 전략 거래표를 읽기 전용으로 유지합니다.
+        display_trades = trades.copy()
+        exit_label_map = {
+            "TARGET": "TARGET(목표수익 매도)",
+            "NORMAL_LOC": "LOC(+2.7% 목표수익 매도)",
+            "TB3_DYN_LOC": "방어 LOC(매수가 + $0.10 매도)",
+            "TIME": "TIME(기한 만료 매도)",
+            "END": "END(검증 종료 시 보유)",
+        }
+        display_trades["매수일"] = pd.to_datetime(display_trades["Entry_Date"]).dt.date
+        display_trades["매도일"] = pd.to_datetime(display_trades["Exit_Date"]).dt.date
+        display_trades["매수가"] = display_trades["Entry_Price"].map(lambda x: f"${x:,.2f}")
+        display_trades["매도가"] = display_trades["Exit_Price"].map(lambda x: f"${x:,.2f}")
+        display_trades["투자금"] = display_trades["Invested"].map(lambda x: f"{x:,.0f}원")
+        display_trades["수익률"] = display_trades["Return"].map(lambda x: f"{x:.2%}")
+        display_trades["손익"] = display_trades["Profit"].map(lambda x: f"{x:,.0f}원")
+        display_trades["보유 거래일"] = display_trades["Holding_Days"].map(lambda x: f"{int(x)}일")
+        display_trades["매도 이유"] = display_trades["Exit_Type"].map(exit_label_map).fillna(display_trades["Exit_Type"])
+        display_trades = display_trades[[
+            "매수일", "매도일", "매수가", "매도가", "투자금",
+            "수익률", "손익", "보유 거래일", "매도 이유",
+        ]]
+        st.dataframe(
+            display_trades,
+            use_container_width=True,
+            hide_index=True,
+            height=min(650, max(260, 38 * (len(display_trades) + 1))),
         )
-        .encode(
-            "utf-8-sig"
+        csv = trades.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "📥 거래내역 CSV 다운로드",
+            data=csv,
+            file_name="SOXL_current_strategy_trades.csv",
+            mime="text/csv",
         )
-    )
-
-
-    st.download_button(
-
-        "📥 거래내역 CSV 다운로드",
-
-        data=
-            csv,
-
-        file_name=
-            "SOXL_current_strategy_trades.csv",
-
-        mime=
-            "text/csv",
-
-    )
 
 
 # ============================================================
