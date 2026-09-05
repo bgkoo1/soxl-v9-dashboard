@@ -3186,6 +3186,29 @@ stats = current_result["stats"]
 base_stats = base_result["stats"]
 trades = current_result["trades"]
 
+# 비교용 전략 결과를 한곳에서 관리합니다.
+comparison_results = {
+    "V7 Base(기본 전략)": base_result,
+    "V8 장기과매도 약세필터": v8_result,
+    "V9 Final(약세필터 + 하락추세 방어LOC)": v9_result,
+}
+if strategy_short_name.startswith("Custom"):
+    comparison_results[strategy_short_name] = current_result
+
+# 현재 선택 전략과 다른 전략을 기본 비교 대상으로 사용합니다.
+comparison_candidates = [
+    name for name in comparison_results.keys()
+    if name != strategy_short_name
+]
+if strategy_mode.startswith("V9") and "V8 장기과매도 약세필터" in comparison_candidates:
+    default_comparison_name = "V8 장기과매도 약세필터"
+elif strategy_mode.startswith("V8") and "V9 Final(약세필터 + 하락추세 방어LOC)" in comparison_candidates:
+    default_comparison_name = "V9 Final(약세필터 + 하락추세 방어LOC)"
+elif comparison_candidates:
+    default_comparison_name = comparison_candidates[0]
+else:
+    default_comparison_name = strategy_short_name
+
 # 실전 주문 화면은 백테스트 날짜 선택과 분리합니다.
 # 미국 동부시간을 기준으로 현재/다음 주문 대상 세션을 정하고,
 # 그 세션 직전의 확정 일봉까지만 신호에 사용할 수 있습니다.
@@ -4136,6 +4159,13 @@ st.subheader(
     f"핵심 성과 · {strategy_short_name}"
 )
 
+comparison_name = st.selectbox(
+    "성과 비교 기준",
+    options=comparison_candidates if comparison_candidates else [strategy_short_name],
+    index=(comparison_candidates.index(default_comparison_name) if default_comparison_name in comparison_candidates else 0),
+    help="현재 선택한 전략의 성과를 어떤 전략과 비교할지 선택합니다.",
+)
+comparison_stats = comparison_results[comparison_name]["stats"]
 
 k1, k2, k3, k4 = (
     st.columns(
@@ -4143,38 +4173,32 @@ k1, k2, k3, k4 = (
     )
 )
 
-
 k1.metric(
     "최종자산",
-    f"{stats['final_equity']:,.0f}원"
+    f"{stats['final_equity']:,.0f}원",
+    delta=f"{stats['final_equity'] - comparison_stats['final_equity']:+,.0f}원",
 )
-
 
 k2.metric(
     "연평균 복리수익률(CAGR)",
     f"{stats['cagr']:.2%}",
-    delta=
-        f"{(stats['cagr'] - base_stats['cagr']) * 100:+.2f}%p",
+    delta=f"{(stats['cagr'] - comparison_stats['cagr']) * 100:+.2f}%p",
 )
-
 
 k3.metric(
     "최대 낙폭(MDD)",
     f"{stats['mdd']:.2%}",
-    delta=
-        f"{(stats['mdd'] - base_stats['mdd']) * 100:+.2f}%p",
+    delta=f"{(stats['mdd'] - comparison_stats['mdd']) * 100:+.2f}%p",
 )
-
 
 k4.metric(
     "수익·낙폭 효율(Calmar)",
     f"{stats['calmar']:.3f}",
-    delta=
-        f"{stats['calmar'] - base_stats['calmar']:+.3f}",
+    delta=f"{stats['calmar'] - comparison_stats['calmar']:+.3f}",
 )
 
-
 st.caption(
+    f"비교 기준: {comparison_name} · "
     "연평균 복리수익률(CAGR)은 전체 투자기간의 성장률을 연 단위 복리수익률로 환산한 값이며, "
     "최대 낙폭(MDD)은 해당 기간 중 포트폴리오의 최고 자산 대비 가장 크게 하락한 폭입니다. "
     "수익·낙폭 효율(Calmar)은 연평균 복리수익률을 최대 낙폭의 절댓값으로 나눈 값으로, 높을수록 수익 대비 낙폭이 효율적입니다."
@@ -4215,70 +4239,47 @@ tab6, tab1, tab2, tab3, tab4, tab5 = (
 
 with tab1:
 
-    fig = (
-        go.Figure()
+    st.subheader("전략별 자산곡선 비교")
+    equity_options = list(comparison_results.keys())
+    default_equity_options = [
+        name for name in [
+            "V7 Base(기본 전략)",
+            "V8 장기과매도 약세필터",
+            "V9 Final(약세필터 + 하락추세 방어LOC)",
+        ]
+        if name in equity_options
+    ]
+    if strategy_short_name not in default_equity_options and strategy_short_name in equity_options:
+        default_equity_options.append(strategy_short_name)
+
+    selected_equity_strategies = st.multiselect(
+        "표시할 전략",
+        options=equity_options,
+        default=default_equity_options,
+        help="V7·V8·V9 등 원하는 전략의 자산곡선을 동시에 비교할 수 있습니다.",
     )
 
+    fig = go.Figure()
 
-    fig.add_trace(
-        go.Scatter(
-
-            x=
-                base_result[
-                    "equity"
-                ][
-                    "Date"
-                ],
-
-            y=
-                base_result[
-                    "equity"
-                ][
-                    "Equity"
-                ],
-
-            name=
-                "V7 Base(기본 전략)",
-
+    for strategy_name in selected_equity_strategies:
+        result_item = comparison_results[strategy_name]
+        fig.add_trace(
+            go.Scatter(
+                x=result_item["equity"]["Date"],
+                y=result_item["equity"]["Equity"],
+                name=strategy_name,
+            )
         )
-    )
-
-
-    fig.add_trace(
-        go.Scatter(
-
-            x=
-                current_result[
-                    "equity"
-                ][
-                    "Date"
-                ],
-
-            y=
-                current_result[
-                    "equity"
-                ][
-                    "Equity"
-                ],
-
-            name=
-                "Selected Strategy(선택 전략)",
-
-        )
-    )
-
 
     fig.update_layout(
         height=550,
-        hovermode=
-            "x unified",
+        hovermode="x unified",
+        legend=dict(orientation="h"),
     )
-
 
     fig.update_yaxes(
         type="log"
     )
-
 
     st.plotly_chart(
         fig,
@@ -4486,93 +4487,59 @@ with tab4:
 
 
     st.caption(
-        "신규 매수 당시의 MA200 괴리율과 "
-        "최근 20거래일 모멘텀을 기준으로 "
-        "실제 거래 성과를 비교합니다."
+        "가격 흐름은 SOXL 종가와 MA5·MA20·MA50 이동평균선으로 확인하고, "
+        "아래에서는 기존과 동일하게 MA200 괴리율과 최근 20거래일 모멘텀별 거래 성과를 분석합니다."
     )
-
 
     # --------------------------------------------------------
-    # PRICE CHART
+    # PRICE + MA5/20/50 CHART
     # --------------------------------------------------------
 
-    prices_display = (
-        market_analysis[
-            "prices"
-        ]
-    )
+    prices_display = full_df[["Date", "Close"]].copy()
+    prices_display["MA5"] = prices_display["Close"].rolling(5).mean()
+    prices_display["MA20"] = prices_display["Close"].rolling(20).mean()
+    prices_display["MA50"] = prices_display["Close"].rolling(50).mean()
 
+    prices_display = prices_display[
+        (prices_display["Date"].dt.date >= start_date)
+        &
+        (prices_display["Date"].dt.date <= end_date)
+    ].copy()
 
-    prices_display = (
-        prices_display[
-            (
-                prices_display[
-                    "Date"
-                ].dt.date
-                >= start_date
+    if not prices_display.empty:
+        latest_ma_row = prices_display.iloc[-1]
+        ma1, ma2, ma3 = st.columns(3)
+        ma1.metric("5일 이동평균(MA5)", f"${latest_ma_row['MA5']:,.2f}" if pd.notna(latest_ma_row['MA5']) else "-")
+        ma2.metric("20일 이동평균(MA20)", f"${latest_ma_row['MA20']:,.2f}" if pd.notna(latest_ma_row['MA20']) else "-")
+        ma3.metric("50일 이동평균(MA50)", f"${latest_ma_row['MA50']:,.2f}" if pd.notna(latest_ma_row['MA50']) else "-")
+
+        if pd.notna(latest_ma_row["MA5"]) and pd.notna(latest_ma_row["MA20"]) and pd.notna(latest_ma_row["MA50"]):
+            if latest_ma_row["MA5"] < latest_ma_row["MA20"] < latest_ma_row["MA50"]:
+                st.info("현재 이동평균 배열: MA5 < MA20 < MA50 · V9 단기하락추세 방어 LOC 조건에 해당")
+            else:
+                st.caption("현재 이동평균 배열은 V9 단기하락추세 조건(MA5 < MA20 < MA50)에 해당하지 않습니다.")
+
+    fig_price = go.Figure()
+
+    for col_name, display_name in [
+        ("Close", "SOXL 종가"),
+        ("MA5", "5일 이동평균(MA5)"),
+        ("MA20", "20일 이동평균(MA20)"),
+        ("MA50", "50일 이동평균(MA50)"),
+    ]:
+        fig_price.add_trace(
+            go.Scatter(
+                x=prices_display["Date"],
+                y=prices_display[col_name],
+                name=display_name,
             )
-            &
-            (
-                prices_display[
-                    "Date"
-                ].dt.date
-                <= end_date
-            )
-        ]
-    )
-
-
-    fig_price = (
-        go.Figure()
-    )
-
-
-    fig_price.add_trace(
-        go.Scatter(
-
-            x=
-                prices_display[
-                    "Date"
-                ],
-
-            y=
-                prices_display[
-                    "Close"
-                ],
-
-            name=
-                "SOXL",
-
         )
-    )
-
-
-    fig_price.add_trace(
-        go.Scatter(
-
-            x=
-                prices_display[
-                    "Date"
-                ],
-
-            y=
-                prices_display[
-                    "MA200"
-                ],
-
-            name=
-                "MA200",
-
-        )
-    )
-
 
     fig_price.update_layout(
         height=500,
-        hovermode=
-            "x unified",
+        hovermode="x unified",
+        legend=dict(orientation="h"),
     )
-
 
     st.plotly_chart(
         fig_price,
