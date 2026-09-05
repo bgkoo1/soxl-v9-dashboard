@@ -2624,12 +2624,12 @@ def format_regime_table(
 
         (
             "Target_Rate",
-            "LOC(목표수익 매도) 비율",
+            "목표가 매도 비율(LOC)",
         ),
 
         (
             "Time_Rate",
-            "TIME(기한 만료 매도) 비율",
+            "기한만료 매도 비율(TIME)",
         ),
 
         (
@@ -2668,7 +2668,7 @@ def format_regime_table(
 
 
     result[
-        "Profit Factor(이익/손실 비율)"
+        "손익 효율(PF)"
     ] = df[
         "Profit_Factor"
     ].map(
@@ -4145,13 +4145,13 @@ k1, k2, k3, k4 = (
 
 
 k1.metric(
-    "Final Equity(최종자산)",
+    "최종자산",
     f"{stats['final_equity']:,.0f}원"
 )
 
 
 k2.metric(
-    "CAGR(연평균 수익률)",
+    "연평균 복리수익률(CAGR)",
     f"{stats['cagr']:.2%}",
     delta=
         f"{(stats['cagr'] - base_stats['cagr']) * 100:+.2f}%p",
@@ -4159,7 +4159,7 @@ k2.metric(
 
 
 k3.metric(
-    "MDD(최대 하락폭)",
+    "최대 낙폭(MDD)",
     f"{stats['mdd']:.2%}",
     delta=
         f"{(stats['mdd'] - base_stats['mdd']) * 100:+.2f}%p",
@@ -4167,10 +4167,17 @@ k3.metric(
 
 
 k4.metric(
-    "Calmar(수익 대비 하락위험)",
+    "수익·낙폭 효율(Calmar)",
     f"{stats['calmar']:.3f}",
     delta=
         f"{stats['calmar'] - base_stats['calmar']:+.3f}",
+)
+
+
+st.caption(
+    "연평균 복리수익률(CAGR)은 전체 투자기간의 성장률을 연 단위 복리수익률로 환산한 값이며, "
+    "최대 낙폭(MDD)은 해당 기간 중 포트폴리오의 최고 자산 대비 가장 크게 하락한 폭입니다. "
+    "수익·낙폭 효율(Calmar)은 연평균 복리수익률을 최대 낙폭의 절댓값으로 나눈 값으로, 높을수록 수익 대비 낙폭이 효율적입니다."
 )
 
 
@@ -4736,9 +4743,9 @@ with tab4:
             [
                 "평균 수익률",
                 "승률",
-                "LOC(목표수익 매도) 비율",
-                "TIME(기한 만료 매도) 비율",
-                "Profit Factor(이익/손실 비율)",
+                "목표가 매도 비율(LOC)",
+                "기한만료 매도 비율(TIME)",
+                "손익 효율(PF)",
                 "거래수",
             ],
 
@@ -4754,13 +4761,13 @@ with tab4:
         "승률":
             "Win_Rate",
 
-        "LOC(목표수익 매도) 비율":
+        "목표가 매도 비율(LOC)":
             "Target_Rate",
 
-        "TIME(기한 만료 매도) 비율":
+        "기한만료 매도 비율(TIME)":
             "Time_Rate",
 
-        "Profit Factor(이익/손실 비율)":
+        "손익 효율(PF)":
             "Profit_Factor",
 
         "거래수":
@@ -5025,11 +5032,11 @@ with tab4:
 
         "승률",
 
-        "LOC(목표수익 매도) 비율",
+        "목표가 매도 비율(LOC)",
 
-        "TIME(기한 만료 매도) 비율",
+        "기한만료 매도 비율(TIME)",
 
-        "Profit Factor(이익/손실 비율)",
+        "손익 효율(PF)",
 
     ]
 
@@ -5107,7 +5114,7 @@ with tab5:
                             f"{x:.2%}"
                     ),
 
-                "MDD(최대 하락폭)":
+                "연중 최대 낙폭":
                     yearly[
                         "Year_MDD"
                     ]
@@ -5130,6 +5137,12 @@ with tab5:
     )
 
 
+    st.caption(
+        "연중 최대 낙폭은 각 연도 안에서 기록한 최고 포트폴리오 자산 대비 이후 가장 크게 하락한 폭입니다. "
+        "주가 자체의 낙폭이 아니라 전략 자산가치 기준이며, 매년 새로 계산됩니다."
+    )
+
+
     st.dataframe(
         yearly_display,
         use_container_width=True,
@@ -5145,10 +5158,10 @@ with tab5:
 with tab6:
 
     if strategy_mode.startswith("V9"):
-        st.subheader("📋 Actual Trades(실제 거래내역)")
+        st.subheader("📋 실제 거래내역(Actual Trades)")
         st.caption(
             "전략 체결값이 기본으로 입력되어 있으며, 실제 매매가 달랐던 거래만 날짜·가격·수량·매도전략을 수정해 저장할 수 있습니다. "
-            "저장한 실제 체결 손익은 실전 현금·NAV·다음 매수금액에 반영되지만 백테스트 CAGR/MDD에는 영향을 주지 않습니다."
+            "저장한 실제 체결 손익은 실전 현금·총자산(NAV)·다음 매수금액에 반영되지만, 전략 백테스트의 연평균 복리수익률(CAGR)·최대 낙폭(MDD)에는 영향을 주지 않습니다."
         )
 
         if "v9_trade_overrides" not in st.session_state:
@@ -5186,6 +5199,43 @@ with tab6:
                 fx_daily=trades_fx_daily,
                 fallback_fx=portfolio_fallback_fx,
             )
+
+            # 실제 거래내역에서 바로 확인할 수 있는 핵심 결과만 요약합니다.
+            # 아래 편집표와 같은 데이터를 다시 표 형태로 반복 표시하지 않습니다.
+            actual_profit_series = pd.to_numeric(
+                actual_records_all.get("손익(원)", pd.Series(dtype=float)),
+                errors="coerce",
+            )
+            actual_return_series = pd.to_numeric(
+                actual_records_all.get("수익률", pd.Series(dtype=float)),
+                errors="coerce",
+            )
+            valid_profit = actual_profit_series.dropna()
+            valid_return = actual_return_series.dropna()
+            actual_total_profit = float(valid_profit.sum()) if not valid_profit.empty else 0.0
+            actual_win_rate = (
+                float((valid_profit > 0).mean())
+                if not valid_profit.empty
+                else float("nan")
+            )
+            actual_avg_return = (
+                float(valid_return.mean())
+                if not valid_return.empty
+                else float("nan")
+            )
+            actual_trade_count = int(len(actual_records_all))
+
+            ak1, ak2, ak3, ak4 = st.columns(4)
+            ak1.metric("누적 실제 손익", f"{actual_total_profit:+,.0f}원")
+            ak2.metric(
+                "실제 거래 승률",
+                f"{actual_win_rate:.2%}" if pd.notna(actual_win_rate) else "-",
+            )
+            ak3.metric(
+                "평균 실제 수익률",
+                f"{actual_avg_return:.2%}" if pd.notna(actual_avg_return) else "-",
+            )
+            ak4.metric("총 거래건수", f"{actual_trade_count:,}건")
 
             view_options = ["최근 30건", "최근 100건", "전체"]
             view_choice = st.selectbox(
@@ -5377,27 +5427,7 @@ with tab6:
             else:
                 st.warning("현재는 세션 저장만 사용 중입니다. Streamlit Secrets의 GitHub/암호화 설정을 확인하세요.")
 
-            # 모바일/좁은 화면에서는 핵심 결과만 빠르게 볼 수 있도록 손익 요약표를 별도로 제공합니다.
-            st.markdown("#### 실제 체결 손익 요약")
-            summary_display = actual_records[[
-                "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
-                "수익률", "손익(원)", "매도전략", "수정",
-            ]].copy()
-            summary_display["매수가($)"] = summary_display["매수가($)"].map(lambda x: f"${x:,.2f}")
-            summary_display["매도가($)"] = summary_display["매도가($)"].map(lambda x: f"${x:,.2f}")
-            summary_display["수량(주)"] = summary_display["수량(주)"].map(lambda x: f"{int(x):,}주")
-            summary_display["수익률"] = summary_display["수익률"].map(
-                lambda x: f"{x:.2%}" if pd.notna(x) else "계산 불가"
-            )
-            summary_display["손익(원)"] = summary_display["손익(원)"].map(
-                lambda x: f"{x:+,.0f}원" if pd.notna(x) else "환율 조회 필요"
-            )
-            st.dataframe(
-                summary_display,
-                use_container_width=True,
-                hide_index=True,
-                height=min(620, max(240, 38 * (len(summary_display) + 1))),
-            )
+            # 실제 거래내역 편집표 자체가 상세 손익표 역할을 하므로 중복 요약표는 제거했습니다.
 
             with st.expander("전략 기준값과 비교"):
                 strategy_compare = actual_records[[
