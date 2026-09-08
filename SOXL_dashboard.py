@@ -3988,6 +3988,63 @@ st.markdown(
         line-height: 1.45;
         overflow-wrap: anywhere;
     }
+    .v10-crash-card {
+        border: 1px solid rgba(52, 124, 220, 0.22);
+        border-left: 7px solid #347cdc;
+        border-radius: 14px;
+        padding: 0.95rem 1.10rem 0.90rem 1.10rem;
+        margin: 0.55rem 0 0.75rem 0;
+        background: rgba(52, 124, 220, 0.07);
+    }
+    .v10-crash-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.8rem;
+        margin-bottom: 0.72rem;
+    }
+    .v10-crash-title {
+        font-size: 1.02rem;
+        font-weight: 850;
+    }
+    .v10-crash-badge {
+        display: inline-block;
+        padding: 0.23rem 0.55rem;
+        border-radius: 999px;
+        background: rgba(52, 124, 220, 0.13);
+        font-size: 0.78rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    .v10-crash-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.55rem;
+        margin-bottom: 0.65rem;
+    }
+    .v10-crash-metric {
+        padding: 0.62rem 0.72rem;
+        border-radius: 10px;
+        background: rgba(255,255,255,0.58);
+        border: 1px solid rgba(128,128,128,0.12);
+        min-width: 0;
+    }
+    .v10-crash-label {
+        font-size: 0.75rem;
+        opacity: 0.64;
+        margin-bottom: 0.12rem;
+    }
+    .v10-crash-value {
+        font-size: 1.16rem;
+        font-weight: 850;
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+    }
+    .v10-crash-note {
+        font-size: 0.82rem;
+        opacity: 0.72;
+        line-height: 1.42;
+    }
 
     @media (max-width: 900px) {
         .compact-card {
@@ -4000,6 +4057,8 @@ st.markdown(
         .live-grid { grid-template-columns: 1fr; gap: 0.45rem; }
         .signal-card { min-height: auto; }
         .status-strip { font-size: 0.78rem; }
+        .v10-crash-grid { grid-template-columns: 1fr 1fr; }
+        .v10-crash-value { font-size: 1.05rem; }
     }
 
     @media (max-width: 640px) {
@@ -4008,6 +4067,10 @@ st.markdown(
         .live-price-row { align-items: flex-start; flex-direction: column; gap: 0.2rem; }
         .live-price { font-size: 1.45rem; }
         .signal-status { font-size: 1.1rem; }
+        .v10-crash-head { align-items: flex-start; flex-direction: column; gap: 0.35rem; }
+        .v10-crash-grid { grid-template-columns: 1fr 1fr; }
+        .v10-crash-metric { padding: 0.52rem 0.60rem; }
+        .v10-crash-value { font-size: 0.98rem; }
     }
     </style>
     """,
@@ -4146,12 +4209,37 @@ def render_compact_trading_dashboard():
                 else "예상수량 계산 필요"
             )
             if v10_extra_buy_amount > 0:
-                st.info(
-                    f"⚡ **V10 급락 추가매수 LOC** · 지정가 **${v10_crash_loc_price:,.2f}** "
-                    f"(전일 확정 종가 ${latest_signal_close:,.2f} × 0.91) · "
-                    f"예정금액 **{v10_extra_buy_amount:,.0f}원** · {extra_qty_text} · "
-                    "당일 종가가 지정가 이하이면 해당 종가로 추가 1슬롯 체결로 판정되며, "
-                    "다음 확정 일봉 업데이트 후 현재 보유슬롯에 자동 반영됩니다."
+                st.markdown(
+                    f"""
+                    <div class="v10-crash-card">
+                        <div class="v10-crash-head">
+                            <div class="v10-crash-title">⚡ V10 급락 추가매수</div>
+                            <div class="v10-crash-badge">추가 LOC 1슬롯 대기</div>
+                        </div>
+                        <div class="v10-crash-grid">
+                            <div class="v10-crash-metric">
+                                <div class="v10-crash-label">LOC 주문가격</div>
+                                <div class="v10-crash-value">${v10_crash_loc_price:,.2f}</div>
+                            </div>
+                            <div class="v10-crash-metric">
+                                <div class="v10-crash-label">예상 주문수량</div>
+                                <div class="v10-crash-value">{v10_extra_estimated_qty:,.0f}주</div>
+                            </div>
+                            <div class="v10-crash-metric">
+                                <div class="v10-crash-label">예정금액</div>
+                                <div class="v10-crash-value">{v10_extra_buy_amount:,.0f}원</div>
+                            </div>
+                            <div class="v10-crash-metric">
+                                <div class="v10-crash-label">체결조건</div>
+                                <div class="v10-crash-value">종가 ≤ ${v10_crash_loc_price:,.2f}</div>
+                            </div>
+                        </div>
+                        <div class="v10-crash-note">
+                            기준: 전일 확정 종가 ${latest_signal_close:,.2f} × 0.91 · 조건 충족 시 당일 종가로 추가 1슬롯 체결 판정 · 다음 확정 일봉 업데이트 후 현재 보유슬롯에 자동 반영
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
             else:
                 st.caption(
