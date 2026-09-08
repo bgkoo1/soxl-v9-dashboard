@@ -26,6 +26,11 @@ from SOXL_V9_backtest import (
     run_v9_backtest,
     TB3_LOC_PLUS_DOLLAR,
 )
+from SOXL_V10_backtest import (
+    run_v10_backtest,
+    CRASH_THRESHOLD as V10_CRASH_THRESHOLD,
+    CRASH_LOC_MULTIPLIER as V10_CRASH_LOC_MULTIPLIER,
+)
 
 # ============================================================
 # PAGE CONFIG
@@ -145,8 +150,8 @@ st.markdown(
 st.title("📈 SOXL Quant Strategy Lab(퀀트 전략 대시보드)")
 
 st.caption(
-    "최종 V9 = 장기과매도 약세 필터 + 단기하락추세 방어 LOC · "
-    "장기과매도 약세구간에서는 신규매수를 쉬고, 단기하락추세 구간에서는 기존 티어 LOC를 매수가 + $0.10로 전환합니다."
+    "최종 V10 = V9 + 급락 추가매수 LOC · "
+    "장기과매도 약세필터와 TB3 방어 LOC를 유지하면서, 종가가 전일 대비 -9% 이하이면 같은 종가에 추가 1슬롯을 매수합니다."
 )
 
 
@@ -1377,6 +1382,7 @@ def build_open_positions_table(trades_df, current_close, as_of_date, holding_day
 
         rows.append({
             "슬롯": slot_no,
+            "매수유형": str(pos.get("buy_type", "기본 MOC")),
             "매수일": entry_date.date(),
             "매수가": f"${float(trade['Entry_Price']):,.2f}",
             "현재가": f"${current_close:,.2f}",
@@ -1394,7 +1400,14 @@ def build_open_positions_table(trades_df, current_close, as_of_date, holding_day
 
 
 def v9_position_key(pos):
-    """현재 슬롯을 수량 오버라이드와 연결하기 위한 안정적인 키."""
+    """현재 슬롯을 수량 오버라이드와 연결하기 위한 안정적인 키.
+
+    V10은 같은 날 같은 종가에 2개 슬롯이 생길 수 있으므로 position_id를 우선 사용합니다.
+    V9 및 과거 저장값은 기존 날짜|가격 키를 그대로 유지합니다.
+    """
+    position_id = pos.get("position_id") if hasattr(pos, "get") else None
+    if position_id is not None and str(position_id).strip() and str(position_id).lower() != "nan":
+        return f"v10|{str(position_id).strip()}"
     d = pd.Timestamp(pos["entry_date"]).normalize().date().isoformat()
     px = float(pos["entry_price"])
     return f"{d}|{px:.6f}"
@@ -1523,6 +1536,7 @@ def build_v9_actual_trade_records(
         key = v9_position_key({
             "entry_date": strategy_entry_date,
             "entry_price": strategy_entry_price,
+            "position_id": trade.get("Position_ID"),
         })
 
         strategy_fx = lookup_entry_fx(strategy_entry_date, fx_daily, fallback_fx)
@@ -1580,6 +1594,7 @@ def build_v9_actual_trade_records(
             "전략 매도가": strategy_exit_price,
             "전략 수량": strategy_qty if strategy_qty is not None else default_qty,
             "전략 매도전략": v9_exit_strategy_label(trade.get("Exit_Type")),
+            "매수유형": str(trade.get("Buy_Type", "기본 MOC")),
             "매수일": actual_entry_date.date(),
             "매도일": actual_exit_date.date(),
             "매수가($)": actual_entry_price,
@@ -1624,6 +1639,7 @@ def build_v9_manual_trade_records(manual_trades, fx_daily=None, fallback_fx=None
             "전략 매도가": float("nan"),
             "전략 수량": float("nan"),
             "전략 매도전략": "-",
+            "매수유형": "수동 추가",
             "매수일": entry_date.date(),
             "매도일": exit_date.date(),
             "매수가($)": entry_price,
@@ -1775,6 +1791,7 @@ def build_v9_open_positions_table(
 
         rows.append({
             "슬롯": slot_no,
+            "매수유형": str(pos.get("buy_type", "기본 MOC")),
             "매수일": entry_date.date(),
             "매수금액": f"{actual_invested:,.0f}원",
             "매수가": f"${entry_price:,.2f}",
@@ -1798,7 +1815,7 @@ def build_live_open_holdings_df(
     qty_overrides=None, fx_daily=None, fallback_fx=None,
 ):
     """실시간 평가손익 계산에 사용할 미청산 포지션 원자료."""
-    if strategy_mode.startswith("V9"):
+    if strategy_mode.startswith(("V9", "V10")):
         positions = live_result.get("open_positions", [])
         if not positions:
             return pd.DataFrame(columns=["Entry_Price", "Invested"])
@@ -2997,6 +3014,7 @@ st.sidebar.subheader(
 strategy_mode = st.sidebar.radio(
     "Strategy(전략) 선택",
     [
+        "V10 Final(V9 + -9% 급락 추가매수)",
         "V9 Final(약세필터 + 하락추세 방어LOC)",
         "V8 장기과매도 약세필터",
         "V7 Base(기본 7분할)",
@@ -3197,7 +3215,7 @@ if start_date > end_date:
 v9_cashflows = []
 v9_cashflow_summary = {"deposits": 0.0, "withdrawals": 0.0, "net": 0.0}
 
-if strategy_mode.startswith("V9"):
+if strategy_mode.startswith(("V9", "V10")):
     if "v9_cashflows" not in st.session_state:
         loaded_cashflows, cashflow_status = load_persisted_v9_cashflows()
         st.session_state["v9_cashflows"] = loaded_cashflows
@@ -3363,7 +3381,20 @@ v9_raw_result = run_v9_backtest(
 )
 v9_result = add_result_tables(v9_raw_result, initial_capital)
 
-if strategy_mode.startswith("V9"):
+# V10: V9 + 종가가 전일 대비 -9% 이하이면 같은 종가에 추가 1슬롯 매수
+v10_raw_result = run_v10_backtest(
+    raw_df=full_df,
+    initial_capital=initial_capital,
+    start_date=start_date,
+    end_date=end_date,
+)
+v10_result = add_result_tables(v10_raw_result, initial_capital)
+
+if strategy_mode.startswith("V10"):
+    current_result = v10_result
+    strategy_short_name = "V10 Final(V9 + -9% 급락 추가매수)"
+
+elif strategy_mode.startswith("V9"):
     current_result = v9_result
     strategy_short_name = "V9 Final(약세필터 + 하락추세 방어LOC)"
 
@@ -3396,6 +3427,7 @@ comparison_results = {
     "V7 Base(기본 전략)": base_result,
     "V8 장기과매도 약세필터": v8_result,
     "V9 Final(약세필터 + 하락추세 방어LOC)": v9_result,
+    "V10 Final(V9 + -9% 급락 추가매수)": v10_result,
 }
 if strategy_short_name.startswith("Custom"):
     comparison_results[strategy_short_name] = current_result
@@ -3405,8 +3437,10 @@ comparison_candidates = [
     name for name in comparison_results.keys()
     if name != strategy_short_name
 ]
-if strategy_mode.startswith("V9") and "V8 장기과매도 약세필터" in comparison_candidates:
-    default_comparison_name = "V8 장기과매도 약세필터"
+if strategy_mode.startswith("V10") and "V9 Final(약세필터 + 하락추세 방어LOC)" in comparison_candidates:
+    default_comparison_name = "V9 Final(약세필터 + 하락추세 방어LOC)"
+elif strategy_mode.startswith("V9") and "V10 Final(V9 + -9% 급락 추가매수)" in comparison_candidates:
+    default_comparison_name = "V10 Final(V9 + -9% 급락 추가매수)"
 elif strategy_mode.startswith("V8") and "V9 Final(약세필터 + 하락추세 방어LOC)" in comparison_candidates:
     default_comparison_name = "V9 Final(약세필터 + 하락추세 방어LOC)"
 elif comparison_candidates:
@@ -3444,6 +3478,7 @@ latest_momentum = None
 latest_ma5 = None
 latest_ma20 = None
 latest_ma50 = None
+latest_signal_close = None
 signal_ready = False
 signal_source_date = None
 
@@ -3455,6 +3490,7 @@ if not eligible_signals.empty:
     latest_ma5 = latest_signal["MA5"]
     latest_ma20 = latest_signal["MA20"]
     latest_ma50 = latest_signal["MA50"]
+    latest_signal_close = float(latest_signal["Close"]) if pd.notna(latest_signal["Close"]) else None
     signal_ready = (
         pd.notna(latest_ma_gap)
         and pd.notna(latest_momentum)
@@ -3482,7 +3518,16 @@ if live_df.empty:
 
 live_close = float(full_df.iloc[-1]["Close"])
 
-if strategy_mode.startswith("V9"):
+if strategy_mode.startswith("V10"):
+    live_result = run_v10_backtest(
+        raw_df=full_df,
+        initial_capital=initial_capital,
+        start_date=start_date,
+        end_date=latest_confirmed_date,
+    )
+    live_cash = float(live_result["equity"]["Cash"].iloc[-1])
+    live_open_count = len(live_result.get("open_positions", []))
+elif strategy_mode.startswith("V9"):
     live_result = run_v9_backtest(
         raw_df=full_df,
         initial_capital=initial_capital,
@@ -3533,7 +3578,7 @@ model_live_nav = float(live_result["equity"]["Equity"].iloc[-1])
 position_reference_date = action_session
 
 # V9 실전 운용에서는 사용자가 입력한 실제 보유수량을 현금/NAV/다음 주문금액에 반영합니다.
-portfolio_fx_snapshot = get_usdkrw_realtime_snapshot() if strategy_mode.startswith("V9") else {"rate": None}
+portfolio_fx_snapshot = get_usdkrw_realtime_snapshot() if strategy_mode.startswith(("V9", "V10")) else {"rate": None}
 portfolio_fallback_fx = portfolio_fx_snapshot.get("rate")
 v9_fx_daily = pd.DataFrame(columns=["Date", "USD_KRW"])
 v9_quantity_overrides = {}
@@ -3543,7 +3588,7 @@ realized_execution_adjustment = 0.0
 manual_realized_profit = 0.0
 net_external_cashflow = 0.0
 
-if strategy_mode.startswith("V9"):
+if strategy_mode.startswith(("V9", "V10")):
     if "v9_trade_overrides" not in st.session_state:
         loaded_trade_overrides, trade_override_status = load_persisted_v9_trade_overrides()
         st.session_state["v9_trade_overrides"] = loaded_trade_overrides
@@ -3645,30 +3690,41 @@ reserve_ratio_for_live = (reserve_percent / 100) if is_custom else BASE_RESERVE_
 reserve_floor = live_nav * reserve_ratio_for_live
 usable_cash = max(0.0, live_cash - reserve_floor)
 
+# V10 추가 LOC 주문 계획: 전일 확정 종가의 91%에 LOC를 걸고,
+# 당일 종가가 그 가격 이하로 마감되면 해당 종가에 추가 1슬롯이 체결된 것으로 다음날 반영합니다.
+v10_crash_loc_price = (
+    float(latest_signal_close) * V10_CRASH_LOC_MULTIPLIER
+    if strategy_mode.startswith("V10") and latest_signal_close is not None
+    else None
+)
+v10_base_buy_amount = 0.0
+v10_extra_buy_amount = 0.0
+v10_available_slots = max(0, max_slots_for_live - live_open_count)
+
 if not signal_ready:
     next_action = "CHECK DATA(데이터 확인 필요)"
     next_buy_amount = 0.0
     market_state_text = "DATA CHECK(데이터 확인 필요)"
-elif (strategy_mode.startswith("V8") or strategy_mode.startswith("V9")) and latest_risk_state:
+elif (strategy_mode.startswith("V8") or strategy_mode.startswith(("V9", "V10"))) and latest_risk_state:
     next_action = "SKIP(신규매수 쉬기)"
     next_buy_amount = 0.0
     market_state_text = (
         "장기과매도 약세 + 단기하락추세(신규매수 중단 · 방어 LOC)"
-        if strategy_mode.startswith("V9") and latest_tb3_state
+        if strategy_mode.startswith(("V9", "V10")) and latest_tb3_state
         else "장기과매도 약세구간(신규매수 중단)"
     )
 elif live_open_count >= max_slots_for_live:
     next_action = "WAIT(보유 슬롯 가득 참)"
     next_buy_amount = 0.0
     market_state_text = (
-        "단기하락추세(방어 LOC 적용)" if strategy_mode.startswith("V9") and latest_tb3_state
+        "단기하락추세(방어 LOC 적용)" if strategy_mode.startswith(("V9", "V10")) and latest_tb3_state
         else "NORMAL(정상 매수 구간)"
     )
 elif usable_cash <= 0:
     next_action = "WAIT(사용 가능한 현금 없음)"
     next_buy_amount = 0.0
     market_state_text = (
-        "단기하락추세(방어 LOC 적용)" if strategy_mode.startswith("V9") and latest_tb3_state
+        "단기하락추세(방어 LOC 적용)" if strategy_mode.startswith(("V9", "V10")) and latest_tb3_state
         else "NORMAL(정상 매수 구간)"
     )
 else:
@@ -3676,9 +3732,19 @@ else:
     next_buy_amount = min(target_buy_amount, usable_cash)
     next_action = "BUY(신규매수)" if next_buy_amount > 0 else "WAIT(신규매수 대기)"
     market_state_text = (
-        "단기하락추세(방어 LOC 적용)" if strategy_mode.startswith("V9") and latest_tb3_state
+        "단기하락추세(방어 LOC 적용)" if strategy_mode.startswith(("V9", "V10")) and latest_tb3_state
         else "NORMAL(정상 매수 구간)"
     )
+
+# V10에서는 기본 MOC 1슬롯과 급락 LOC 추가 1슬롯을 별도 주문으로 표시합니다.
+# 최대 7슬롯과 현재 가용현금 한도를 동시에 적용합니다.
+if strategy_mode.startswith("V10") and next_action.startswith("BUY"):
+    one_slot_target = live_nav / BASE_POSITION_DIVISOR
+    if v10_available_slots >= 1 and usable_cash > 0:
+        v10_base_buy_amount = min(one_slot_target, usable_cash)
+    cash_after_base = max(0.0, usable_cash - v10_base_buy_amount)
+    if v10_available_slots >= 2 and cash_after_base > 0:
+        v10_extra_buy_amount = min(one_slot_target, cash_after_base)
 
 moc_today_count = 0
 if action_session is not None and not open_positions_display.empty:
@@ -3757,12 +3823,27 @@ st.subheader("🧭 Trading Dashboard(오늘의 운용 현황)")
 if next_action.startswith("BUY"):
     action_icon = "🟢"
     action_word = "BUY"
-    action_title = "오늘 신규매수"
-    action_amount_text = f"{next_buy_amount:,.0f}원"
-    if strategy_mode.startswith("V9") and latest_tb3_state:
-        action_reason = f"단기하락추세 · 신규매수는 계속 · 확정 NAV의 1/{divisor_for_next} · 보유 티어 방어 LOC 적용"
+    if strategy_mode.startswith("V10"):
+        action_title = "기본 MOC 1슬롯 + 급락 LOC 대기"
+        action_amount_text = f"기본 {v10_base_buy_amount:,.0f}원"
+        crash_price_text = f"${v10_crash_loc_price:,.2f}" if v10_crash_loc_price is not None else "계산 필요"
+        if v10_extra_buy_amount > 0:
+            action_reason = (
+                f"추가 LOC {crash_price_text} · 종가가 해당 가격 이하이면 "
+                f"추가 {v10_extra_buy_amount:,.0f}원 1슬롯 체결 · 최대 {max_slots_for_live}슬롯"
+            )
+        else:
+            action_reason = (
+                f"기본 1슬롯 매수 · 추가 LOC {crash_price_text}는 "
+                "빈 슬롯 또는 현금 부족으로 주문 불가"
+            )
     else:
-        action_reason = f"NORMAL(정상 매수 구간) · 확정 NAV의 1/{divisor_for_next}"
+        action_title = "오늘 신규매수"
+        action_amount_text = f"{next_buy_amount:,.0f}원"
+        if strategy_mode.startswith("V9") and latest_tb3_state:
+            action_reason = f"단기하락추세 · 신규매수는 계속 · 확정 NAV의 1/{divisor_for_next} · 보유 티어 방어 LOC 적용"
+        else:
+            action_reason = f"NORMAL(정상 매수 구간) · 확정 NAV의 1/{divisor_for_next}"
     action_class = "action-buy"
 elif next_action.startswith("SKIP"):
     action_icon = "🟠"
@@ -3955,6 +4036,19 @@ def render_compact_trading_dashboard():
         else ("환율 조회 필요" if next_buy_amount > 0 else "-")
     )
 
+    v10_extra_estimated_qty = 0.0
+    if (
+        strategy_mode.startswith("V10")
+        and v10_extra_buy_amount > 0
+        and v10_crash_loc_price is not None
+        and v10_crash_loc_price > 0
+        and realtime_fx is not None
+        and float(realtime_fx) > 0
+    ):
+        v10_extra_estimated_qty = (
+            v10_extra_buy_amount / (v10_crash_loc_price * float(realtime_fx))
+        )
+
     open_df = build_live_open_holdings_df(
         strategy_mode,
         live_result,
@@ -4044,8 +4138,28 @@ def render_compact_trading_dashboard():
             unsafe_allow_html=True,
         )
 
-    # V9 핵심 신호를 한눈에 확인할 수 있도록 별도 상태 카드로 표시합니다.
-    if strategy_mode.startswith("V9"):
+    if strategy_mode.startswith("V10"):
+        if v10_crash_loc_price is not None and next_action.startswith("BUY"):
+            extra_qty_text = (
+                f"예상 {v10_extra_estimated_qty:,.0f}주"
+                if v10_extra_estimated_qty > 0
+                else "예상수량 계산 필요"
+            )
+            if v10_extra_buy_amount > 0:
+                st.info(
+                    f"⚡ **V10 급락 추가매수 LOC** · 지정가 **${v10_crash_loc_price:,.2f}** "
+                    f"(전일 확정 종가 ${latest_signal_close:,.2f} × 0.91) · "
+                    f"예정금액 **{v10_extra_buy_amount:,.0f}원** · {extra_qty_text} · "
+                    "당일 종가가 지정가 이하이면 해당 종가로 추가 1슬롯 체결로 판정되며, "
+                    "다음 확정 일봉 업데이트 후 현재 보유슬롯에 자동 반영됩니다."
+                )
+            else:
+                st.caption(
+                    f"V10 급락 LOC 기준가 ${v10_crash_loc_price:,.2f} · 현재는 추가 주문에 사용할 두 번째 빈 슬롯/현금이 없습니다."
+                )
+
+    # V9/V10 핵심 신호를 한눈에 확인할 수 있도록 별도 상태 카드로 표시합니다.
+    if strategy_mode.startswith(("V9", "V10")):
         risk_on = bool(latest_risk_state)
         trend_on = bool(latest_tb3_state)
         risk_class = "signal-on-danger" if risk_on else "signal-off"
@@ -4076,10 +4190,10 @@ def render_compact_trading_dashboard():
 
     # 핵심 포트폴리오 숫자는 한 줄로 압축합니다.
     s1, s2, s3, s4, s5, s6 = st.columns(6)
-    s1.metric("Confirmed NAV(확정 NAV)", f"{live_nav:,.0f}원", help="V9에서는 실제 보유수량과 누적 추가 입출금을 반영합니다.")
+    s1.metric("Confirmed NAV(확정 NAV)", f"{live_nav:,.0f}원", help="V9/V10에서는 실제 보유수량과 누적 추가 입출금을 반영합니다.")
     s2.metric("Live NAV(실시간 NAV)", f"{realtime_nav:,.0f}원")
     s3.metric("Cash(사용가능 현금)", f"{usable_cash:,.0f}원", help="실제 보유수량 보정과 추가 입출금을 반영한 사용가능 현금입니다.")
-    s4.metric("Net Deposit(추가 순입금)", f"{net_external_cashflow:+,.0f}원" if strategy_mode.startswith("V9") else "-")
+    s4.metric("Net Deposit(추가 순입금)", f"{net_external_cashflow:+,.0f}원" if strategy_mode.startswith(("V9", "V10")) else "-")
     s5.metric("Slots(보유 슬롯)", f"{live_open_count} / {max_slots_for_live}")
     s6.metric("MOC Today(오늘 MOC)", f"{moc_today_count}건")
 
@@ -4093,7 +4207,7 @@ def render_compact_trading_dashboard():
         if missing_sessions == 0
         else f"Data Delay(지연) {missing_sessions}일"
     )
-    if strategy_mode.startswith("V9"):
+    if strategy_mode.startswith(("V9", "V10")):
         if latest_risk_state and latest_tb3_state:
             market_short = "장기과매도 약세 + 단기하락추세"
         elif latest_risk_state:
@@ -4134,12 +4248,12 @@ def render_compact_trading_dashboard():
             f"현재 {signal_source_date.date()} 확정 일봉 기준 참고 신호입니다."
         )
 
-    if (strategy_mode.startswith("V8") or strategy_mode.startswith("V9")) and signal_ready and latest_risk_state:
+    if (strategy_mode.startswith("V8") or strategy_mode.startswith(("V9", "V10"))) and signal_ready and latest_risk_state:
         st.warning(
             "장기과매도 약세구간이라 오늘 신규매수는 쉽니다. 기존 포지션의 매도 규칙은 계속 적용됩니다."
         )
 
-    if strategy_mode.startswith("V9") and signal_ready and latest_tb3_state:
+    if strategy_mode.startswith(("V9", "V10")) and signal_ready and latest_tb3_state:
         st.info(
             "TB3 ON: MA5 < MA20 < MA50. 기존 보유 티어의 현재 LOC는 모두 매수가 + $0.10입니다. "
             "TB3가 해제되면 다시 +2.7% LOC로 복귀합니다."
@@ -4148,7 +4262,7 @@ def render_compact_trading_dashboard():
     with st.expander("운용·신호 상세 정보"):
         st.write(f"운용 시작일: {start_date}")
         st.write(f"초기 투자금: {initial_capital:,.0f}원")
-        if strategy_mode.startswith("V9"):
+        if strategy_mode.startswith(("V9", "V10")):
             st.write(
                 f"추가 입금/출금: 입금 {v9_cashflow_summary['deposits']:,.0f}원 · "
                 f"출금 {v9_cashflow_summary['withdrawals']:,.0f}원 · "
@@ -4166,13 +4280,19 @@ def render_compact_trading_dashboard():
         st.write(f"신호 기준일: {signal_date_text}")
         st.write(f"시장 상태: {market_state_text}")
         st.write("장기과매도 약세조건: MA200 대비 -15% 미만이며 20거래일 수익률이 -20% 이상 -5% 미만")
-        if strategy_mode.startswith("V9"):
+        if strategy_mode.startswith(("V9", "V10")):
             st.write(f"단기하락추세 상태: {'ON' if latest_tb3_state else 'OFF'} · 조건 MA5 < MA20 < MA50")
             if pd.notna(latest_ma5) and pd.notna(latest_ma20) and pd.notna(latest_ma50):
                 st.write(f"MA5 / MA20 / MA50: {latest_ma5:.2f} / {latest_ma20:.2f} / {latest_ma50:.2f}")
             st.write(
                 f"현재 LOC 규칙: {'매수가 + $0.10' if latest_tb3_state else '매수가 × 1.027'}"
             )
+            if strategy_mode.startswith("V10"):
+                crash_text = f"${v10_crash_loc_price:,.2f}" if v10_crash_loc_price is not None else "계산 필요"
+                st.write(
+                    f"V10 급락 추가매수: 전일 종가 × 0.91 = {crash_text} LOC · "
+                    "당일 종가가 기준가 이하이면 같은 종가에 추가 1슬롯 체결"
+                )
         if pd.notna(latest_ma_gap):
             st.write(f"MA200 Gap: {latest_ma_gap:.2%}")
         if pd.notna(latest_momentum):
@@ -4189,15 +4309,15 @@ def render_compact_trading_dashboard():
 
     st.caption(
         "실시간 가격은 평가손익과 예상 주문수량 표시용이며 장기과매도 약세·단기하락추세·신규매수금액·TIME/MOC 판단에는 반영하지 않습니다. "
-        "모든 V9 신호는 직전 확정 일봉 기준이며 실시간 영역은 5분마다 자동 새로고침됩니다."
+        "V9/V10의 Risk B·TB3 신호는 직전 확정 일봉 기준이며 실시간 영역은 5분마다 자동 새로고침됩니다."
     )
 
-    if strategy_mode.startswith("V9"):
+    if strategy_mode.startswith(("V9", "V10")):
         v9_open_positions = live_result.get("open_positions", [])
 
     st.subheader("📦 Open Positions(현재 보유 슬롯)")
 
-    if strategy_mode.startswith("V9"):
+    if strategy_mode.startswith(("V9", "V10")):
         realtime_positions = build_v9_open_positions_table(
             v9_open_positions,
             current_close=realtime_price,
@@ -4241,9 +4361,9 @@ def render_compact_trading_dashboard():
         .reset_index(drop=True)
     )
 
-    if strategy_mode.startswith("V9"):
+    if strategy_mode.startswith(("V9", "V10")):
         preferred_cols = [
-            "슬롯", "매수일", "매수금액", "매수가", "적용환율", "보유수량",
+            "슬롯", "매수유형", "매수일", "매수금액", "매수가", "적용환율", "보유수량",
             "LOC 모드", "LOC 주문가", "현재가", "현재 수익률",
             "평가손익", "MOC 예정일", "남은 거래일", "상태",
         ]
@@ -4356,11 +4476,12 @@ def render_compact_trading_dashboard():
             hide_index=True,
             height=min(520, max(220, 38 * (len(position_table) + 1))),
         )
-    if strategy_mode.startswith("V9"):
+    if strategy_mode.startswith(("V9", "V10")):
         st.caption(
             f"현재가·수익률·평가손익은 {'장중 참고시세' if snapshot['is_live'] else '마지막 확정 종가'} 기준입니다. · "
             f"보유수량은 매수금액 ÷ (매수가 × 매수일 USD/KRW 참고환율)로 계산한 예상수량을 정수로 반올림해 표시합니다. · "
             f"목표 매도가는 직전 확정 일봉의 단기하락추세 상태를 반영합니다. · "
+            f"V10 선택 시 급락일에 생성된 추가 슬롯은 '급락 LOC (-9%)'로 구분되어 다음 확정 일봉 업데이트 후 자동 표시됩니다. · "
             f"MOC 예정일은 매수일 Day 0 이후 {BASE_HOLDING_DAYS}번째 미국 거래일입니다."
         )
     else:
@@ -4470,6 +4591,7 @@ with tab1:
             "V7 Base(기본 전략)",
             "V8 장기과매도 약세필터",
             "V9 Final(약세필터 + 하락추세 방어LOC)",
+            "V10 Final(V9 + -9% 급락 추가매수)",
         ]
         if name in equity_options
     ]
@@ -4480,7 +4602,7 @@ with tab1:
         "표시할 전략",
         options=equity_options,
         default=default_equity_options,
-        help="V7·V8·V9 등 원하는 전략의 자산곡선을 동시에 비교할 수 있습니다.",
+        help="V7·V8·V9·V10 등 원하는 전략의 자산곡선을 동시에 비교할 수 있습니다.",
     )
 
     fig = go.Figure()
@@ -5348,7 +5470,7 @@ with tab5:
 
 with tab6:
 
-    if strategy_mode.startswith("V9"):
+    if strategy_mode.startswith(("V9", "V10")):
         st.subheader("📋 실제 거래내역(Actual Trades)")
 
         with st.expander("➕ 수동 거래 추가 / 구글시트 기록 가져오기"):
@@ -5600,7 +5722,7 @@ with tab6:
 
             actual_records["구분"] = actual_records.get("_source", "strategy").map({"strategy": "전략연결", "manual": "수동추가"}).fillna("전략연결")
             editor_cols = [
-                "구분", "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
+                "구분", "매수유형", "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
                 "매도전략", "투자금(원)", "수익률", "손익(원)", "수정",
             ]
             editor_df = actual_records.set_index("_key")[editor_cols].copy()
@@ -5621,9 +5743,10 @@ with tab6:
                 hide_index=True,
                 height=editor_height,
                 row_height=38,
-                disabled=["구분", "투자금(원)", "수익률", "손익(원)", "수정"],
+                disabled=["구분", "매수유형", "투자금(원)", "수익률", "손익(원)", "수정"],
                 column_config={
                     "구분": st.column_config.TextColumn("구분", width="small"),
+                    "매수유형": st.column_config.TextColumn("매수유형", width="medium"),
                     "매수일": st.column_config.DateColumn("✏️ 매수일", format="YYYY-MM-DD", width="small"),
                     "매도일": st.column_config.DateColumn("✏️ 매도일", format="YYYY-MM-DD", width="small"),
                     "매수가($)": st.column_config.NumberColumn("✏️ 매수가", min_value=0.01, step=0.01, format="$%.2f", width="small"),
@@ -5795,7 +5918,7 @@ with tab6:
             with st.expander("전략 기준값과 비교"):
                 strategy_only_records = actual_records[actual_records.get("_source", "strategy") != "manual"].copy()
                 strategy_compare = strategy_only_records[[
-                    "전략 매수일", "전략 매도일", "전략 매수가", "전략 매도가",
+                    "매수유형", "전략 매수일", "전략 매도일", "전략 매수가", "전략 매도가",
                     "전략 수량", "전략 매도전략", "수정",
                 ]].copy()
                 strategy_compare["전략 매수가"] = strategy_compare["전략 매수가"].map(lambda x: f"${x:,.2f}" if pd.notna(x) else "-")
@@ -5809,7 +5932,7 @@ with tab6:
                 )
 
             download_actual = actual_records_all[[
-                "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
+                "매수유형", "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
                 "매도전략", "적용환율", "투자금(원)", "수익률", "손익(원)", "수정",
             ]].copy()
             csv_actual = download_actual.to_csv(index=False).encode("utf-8-sig")
