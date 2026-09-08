@@ -7,6 +7,7 @@ import requests
 from cryptography.fernet import Fernet, InvalidToken
 from pathlib import Path
 from datetime import datetime, date, time, timedelta
+import uuid
 from zoneinfo import ZoneInfo
 
 try:
@@ -592,10 +593,81 @@ def _sanitize_v9_trade_overrides(items):
 
     return cleaned
 
+def _sanitize_dashboard_settings(settings):
+    """암호화 저장소의 운용 시작일/초기 투자금을 안전한 형식으로 정리합니다."""
+    defaults = {"start_date": None, "initial_capital": 100_000_000}
+    if not isinstance(settings, dict):
+        return defaults
+
+    start_raw = settings.get("start_date")
+    if start_raw:
+        try:
+            defaults["start_date"] = pd.Timestamp(start_raw).date().isoformat()
+        except Exception:
+            pass
+
+    try:
+        capital = int(round(float(settings.get("initial_capital", 100_000_000))))
+        defaults["initial_capital"] = max(1_000_000, min(10_000_000_000, capital))
+    except Exception:
+        pass
+    return defaults
+
+
+def _sanitize_v9_manual_trades(items):
+    """전략에 없는 수동 거래를 안전한 형식으로 정리합니다. 현재는 청산 완료 거래만 저장합니다."""
+    cleaned = []
+    allowed_strategies = {
+        "일반 LOC(+2.7%)",
+        "방어 LOC(+$0.10)",
+        "TIME/MOC",
+        "수동 매도",
+        "기타",
+    }
+    seen = set()
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            trade_id = str(item.get("id") or uuid.uuid4().hex).strip()
+            if not trade_id or trade_id in seen:
+                trade_id = uuid.uuid4().hex
+            entry_date = pd.Timestamp(item.get("entry_date")).date().isoformat()
+            exit_date = pd.Timestamp(item.get("exit_date")).date().isoformat()
+            entry_price = float(item.get("entry_price"))
+            exit_price = float(item.get("exit_price"))
+            quantity = max(1, int(round(float(item.get("quantity")))))
+            exit_strategy = str(item.get("exit_strategy", "기타")).strip()
+            note = str(item.get("note", "")).strip()[:120]
+            affect_nav = bool(item.get("affect_nav", True))
+        except Exception:
+            continue
+        if entry_price <= 0 or exit_price <= 0:
+            continue
+        if pd.Timestamp(exit_date) < pd.Timestamp(entry_date):
+            continue
+        if exit_strategy not in allowed_strategies:
+            exit_strategy = "기타"
+        seen.add(trade_id)
+        cleaned.append({
+            "id": trade_id,
+            "entry_date": entry_date,
+            "exit_date": exit_date,
+            "entry_price": round(entry_price, 6),
+            "exit_price": round(exit_price, 6),
+            "quantity": quantity,
+            "exit_strategy": exit_strategy,
+            "note": note,
+            "affect_nav": affect_nav,
+        })
+    cleaned.sort(key=lambda x: (x["exit_date"], x["entry_date"], x["id"]))
+    return cleaned
+
+
 def _load_persisted_v9_state():
-    """GitHub 암호화 파일에서 실제수량 + 입출금 + 실제 체결값을 함께 복원합니다."""
+    """GitHub 암호화 파일에서 설정 + 실제수량 + 입출금 + 실제 거래값을 함께 복원합니다."""
     config = _portfolio_persistence_config()
-    empty = {"quantities": {}, "cashflows": [], "trade_overrides": {}}
+    empty = {"settings": _sanitize_dashboard_settings({}), "quantities": {}, "cashflows": [], "trade_overrides": {}, "manual_trades": []}
     if config is None:
         return empty, "Secrets 미설정"
 
@@ -626,12 +698,16 @@ def _load_persisted_v9_state():
             except (TypeError, ValueError):
                 continue
 
+        settings = _sanitize_dashboard_settings(payload.get("settings", {}))
         cashflows = _sanitize_v9_cashflows(payload.get("cashflows", []))
         trade_overrides = _sanitize_v9_trade_overrides(payload.get("trade_overrides", {}))
+        manual_trades = _sanitize_v9_manual_trades(payload.get("manual_trades", []))
         return {
+            "settings": settings,
             "quantities": cleaned_qty,
             "cashflows": cashflows,
             "trade_overrides": trade_overrides,
+            "manual_trades": manual_trades,
         }, "GitHub 암호화 저장값 불러옴"
     except InvalidToken:
         return empty, "암호화 키가 저장 데이터와 일치하지 않음"
@@ -639,7 +715,7 @@ def _load_persisted_v9_state():
         return empty, f"영구 저장 불러오기 실패: {e}"
 
 
-def _save_persisted_v9_state(quantity_map=None, cashflows=None, trade_overrides=None):
+def _save_persisted_v9_state(quantity_map=None, cashflows=None, trade_overrides=None, settings=None, manual_trades=None):
     """실제수량·입출금·실제 체결값을 하나의 암호화 파일로 저장합니다."""
     config = _portfolio_persistence_config()
     if config is None:
@@ -653,13 +729,17 @@ def _save_persisted_v9_state(quantity_map=None, cashflows=None, trade_overrides=
             continue
     cleaned_cashflows = _sanitize_v9_cashflows(cashflows)
     cleaned_trade_overrides = _sanitize_v9_trade_overrides(trade_overrides)
+    cleaned_settings = _sanitize_dashboard_settings(settings or {})
+    cleaned_manual_trades = _sanitize_v9_manual_trades(manual_trades)
 
     payload = {
-        "version": 3,
+        "version": 4,
         "updated_at": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(),
+        "settings": cleaned_settings,
         "quantities": cleaned_qty,
         "cashflows": cleaned_cashflows,
         "trade_overrides": cleaned_trade_overrides,
+        "manual_trades": cleaned_manual_trades,
     }
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     encrypted = Fernet(config["key"].encode("utf-8")).encrypt(raw)
@@ -709,7 +789,7 @@ def _save_persisted_v9_state(quantity_map=None, cashflows=None, trade_overrides=
                 timeout=15,
             )
         response.raise_for_status()
-        return True, "실제 보유수량·입출금·실제 거래값을 암호화하여 영구 저장했습니다."
+        return True, "운용설정·실제 보유수량·입출금·실제 거래값을 암호화하여 영구 저장했습니다."
     except Exception as e:
         return False, f"영구 저장 실패: {e}"
 
@@ -717,17 +797,21 @@ def _save_persisted_v9_state(quantity_map=None, cashflows=None, trade_overrides=
 def load_persisted_v9_quantities():
     """기존 호출부 호환용: 저장 상태에서 실제 보유수량만 반환합니다."""
     state, status = _load_persisted_v9_state()
+    st.session_state["v9_settings"] = state.get("settings", {})
     st.session_state["v9_cashflows"] = state.get("cashflows", [])
     st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
+    st.session_state["v9_manual_trades"] = state.get("manual_trades", [])
     return state.get("quantities", {}), status
 
 
 def load_persisted_v9_cashflows():
     """입출금 장부를 불러오며 수량도 같은 세션에 동기화합니다."""
     state, status = _load_persisted_v9_state()
+    st.session_state["v9_settings"] = state.get("settings", {})
     st.session_state["v9_quantity_overrides"] = state.get("quantities", {})
     st.session_state["v9_cashflows"] = state.get("cashflows", [])
     st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
+    st.session_state["v9_manual_trades"] = state.get("manual_trades", [])
     st.session_state["v9_quantity_persistence_status"] = status
     return state.get("cashflows", []), status
 
@@ -738,6 +822,8 @@ def save_persisted_v9_quantities(quantity_map):
         quantity_map=quantity_map,
         cashflows=st.session_state.get("v9_cashflows", []),
         trade_overrides=st.session_state.get("v9_trade_overrides", {}),
+        settings=st.session_state.get("v9_settings", {}),
+        manual_trades=st.session_state.get("v9_manual_trades", []),
     )
 
 
@@ -747,6 +833,8 @@ def save_persisted_v9_cashflows(cashflows):
         quantity_map=st.session_state.get("v9_quantity_overrides", {}),
         cashflows=cashflows,
         trade_overrides=st.session_state.get("v9_trade_overrides", {}),
+        settings=st.session_state.get("v9_settings", {}),
+        manual_trades=st.session_state.get("v9_manual_trades", []),
     )
 
 
@@ -754,9 +842,11 @@ def save_persisted_v9_cashflows(cashflows):
 def load_persisted_v9_trade_overrides():
     """실제 체결 거래 오버라이드를 불러옵니다."""
     state, status = _load_persisted_v9_state()
+    st.session_state["v9_settings"] = state.get("settings", {})
     st.session_state["v9_quantity_overrides"] = state.get("quantities", {})
     st.session_state["v9_cashflows"] = state.get("cashflows", [])
     st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
+    st.session_state["v9_manual_trades"] = state.get("manual_trades", [])
     return state.get("trade_overrides", {}), status
 
 
@@ -770,7 +860,35 @@ def save_persisted_v9_trade_overrides(trade_overrides, quantity_map=None):
         ),
         cashflows=st.session_state.get("v9_cashflows", []),
         trade_overrides=trade_overrides,
+        settings=st.session_state.get("v9_settings", {}),
+        manual_trades=st.session_state.get("v9_manual_trades", []),
     )
+
+def save_persisted_dashboard_settings(settings):
+    """운용 시작일/초기 투자금을 기존 암호화 상태와 함께 저장합니다."""
+    cleaned = _sanitize_dashboard_settings(settings)
+    st.session_state["v9_settings"] = cleaned
+    return _save_persisted_v9_state(
+        quantity_map=st.session_state.get("v9_quantity_overrides", {}),
+        cashflows=st.session_state.get("v9_cashflows", []),
+        trade_overrides=st.session_state.get("v9_trade_overrides", {}),
+        settings=cleaned,
+        manual_trades=st.session_state.get("v9_manual_trades", []),
+    )
+
+
+def save_persisted_v9_manual_trades(manual_trades):
+    """수동 거래를 기존 암호화 상태와 함께 저장합니다."""
+    cleaned = _sanitize_v9_manual_trades(manual_trades)
+    st.session_state["v9_manual_trades"] = cleaned
+    return _save_persisted_v9_state(
+        quantity_map=st.session_state.get("v9_quantity_overrides", {}),
+        cashflows=st.session_state.get("v9_cashflows", []),
+        trade_overrides=st.session_state.get("v9_trade_overrides", {}),
+        settings=st.session_state.get("v9_settings", {}),
+        manual_trades=cleaned,
+    )
+
 
 def summarize_v9_cashflows(cashflows, as_of_date=None):
     """지정일 현재 추가 입금/출금 및 순입금을 계산합니다."""
@@ -1454,6 +1572,8 @@ def build_v9_actual_trade_records(
         changed = key in trade_overrides
         rows.append({
             "_key": key,
+            "_source": "strategy",
+            "_manual_id": None,
             "전략 매수일": strategy_entry_date.date(),
             "전략 매도일": strategy_exit_date.date(),
             "전략 매수가": strategy_entry_price,
@@ -1473,9 +1593,64 @@ def build_v9_actual_trade_records(
             "전략손익(원)": float(trade.get("Profit", 0.0)),
             "보유 거래일": int(trade.get("Holding_Days", 0)),
             "수정": "수정됨" if changed else "전략값",
+            "메모": "",
+            "NAV반영": True,
         })
 
     return pd.DataFrame(rows)
+
+
+def build_v9_manual_trade_records(manual_trades, fx_daily=None, fallback_fx=None):
+    """전략에 존재하지 않는 사용자의 수동 청산거래를 실제 거래표 형식으로 변환합니다."""
+    rows = []
+    for item in _sanitize_v9_manual_trades(manual_trades):
+        entry_date = pd.Timestamp(item["entry_date"]).normalize()
+        exit_date = pd.Timestamp(item["exit_date"]).normalize()
+        entry_price = float(item["entry_price"])
+        exit_price = float(item["exit_price"])
+        qty = int(item["quantity"])
+        entry_fx = lookup_entry_fx(entry_date, fx_daily, fallback_fx)
+        invested = profit = None
+        if entry_fx is not None and entry_fx > 0:
+            invested = qty * entry_price * entry_fx
+            profit = qty * (exit_price - entry_price) * entry_fx
+        rows.append({
+            "_key": f"manual|{item['id']}",
+            "_source": "manual",
+            "_manual_id": item["id"],
+            "전략 매수일": pd.NaT,
+            "전략 매도일": pd.NaT,
+            "전략 매수가": float("nan"),
+            "전략 매도가": float("nan"),
+            "전략 수량": float("nan"),
+            "전략 매도전략": "-",
+            "매수일": entry_date.date(),
+            "매도일": exit_date.date(),
+            "매수가($)": entry_price,
+            "매도가($)": exit_price,
+            "수량(주)": qty,
+            "매도전략": item["exit_strategy"],
+            "적용환율": entry_fx,
+            "투자금(원)": invested,
+            "수익률": (exit_price / entry_price - 1) if entry_price > 0 else None,
+            "손익(원)": profit,
+            "전략손익(원)": 0.0,
+            "보유 거래일": max(0, (exit_date - entry_date).days),
+            "수정": "수동추가",
+            "메모": item.get("note", ""),
+            "NAV반영": bool(item.get("affect_nav", True)),
+        })
+    return pd.DataFrame(rows)
+
+
+def calculate_v9_manual_realized_profit(manual_trades, fx_daily=None, fallback_fx=None):
+    """NAV 반영으로 지정한 수동 청산거래의 실현손익 합계를 계산합니다."""
+    records = build_v9_manual_trade_records(manual_trades, fx_daily=fx_daily, fallback_fx=fallback_fx)
+    if records.empty:
+        return 0.0
+    mask = records["NAV반영"].fillna(False).astype(bool)
+    profits = pd.to_numeric(records.loc[mask, "손익(원)"], errors="coerce").dropna()
+    return float(profits.sum()) if not profits.empty else 0.0
 
 
 def calculate_v9_realized_execution_adjustment(
@@ -2788,7 +2963,21 @@ st.sidebar.divider()
 # SETTINGS
 # ============================================================
 
-saved_settings = load_dashboard_settings()
+# 암호화 GitHub 저장값을 우선 사용하고, 기존 로컬 JSON은 1회 마이그레이션용 fallback으로만 사용합니다.
+if "v9_persisted_state_loaded" not in st.session_state:
+    persisted_state, persisted_status = _load_persisted_v9_state()
+    st.session_state["v9_settings"] = persisted_state.get("settings", {})
+    st.session_state["v9_quantity_overrides"] = persisted_state.get("quantities", {})
+    st.session_state["v9_cashflows"] = persisted_state.get("cashflows", [])
+    st.session_state["v9_trade_overrides"] = persisted_state.get("trade_overrides", {})
+    st.session_state["v9_manual_trades"] = persisted_state.get("manual_trades", [])
+    st.session_state["v9_persistence_status"] = persisted_status
+    st.session_state["v9_persisted_state_loaded"] = True
+
+saved_settings = _sanitize_dashboard_settings(st.session_state.get("v9_settings", {}))
+local_settings = load_dashboard_settings()
+if not saved_settings.get("start_date") and local_settings.get("start_date"):
+    saved_settings = _sanitize_dashboard_settings(local_settings)
 
 saved_initial_capital = saved_settings.get("initial_capital", 100_000_000)
 try:
@@ -2950,7 +3139,8 @@ start_date = (
 )
 
 
-# 시작일 또는 초기 투자금이 바뀔 때마다 마지막 설정값을 자동 저장합니다.
+# 시작일 또는 초기 투자금이 바뀌면 암호화 GitHub 저장소에 자동 저장합니다.
+# 로컬 JSON도 fallback/migration 용도로 함께 갱신합니다.
 current_saved_start = saved_settings.get("start_date")
 current_saved_capital = saved_settings.get("initial_capital")
 
@@ -2958,10 +3148,25 @@ if (
     current_saved_start != pd.Timestamp(start_date).date().isoformat()
     or str(current_saved_capital) != str(int(initial_capital))
 ):
+    new_settings = {
+        "start_date": pd.Timestamp(start_date).date().isoformat(),
+        "initial_capital": int(initial_capital),
+    }
     save_dashboard_settings(
         start_date_value=start_date,
         initial_capital_value=initial_capital,
     )
+    if portfolio_persistence_enabled():
+        ok_settings, msg_settings = save_persisted_dashboard_settings(new_settings)
+        st.session_state["v9_settings_save_ok"] = ok_settings
+        st.session_state["v9_settings_save_status"] = msg_settings
+    else:
+        st.session_state["v9_settings"] = _sanitize_dashboard_settings(new_settings)
+
+if portfolio_persistence_enabled():
+    st.sidebar.caption("🔐 시작일·초기 투자금은 GitHub 암호화 저장소에 영구 저장됩니다.")
+else:
+    st.sidebar.warning("시작일·초기 투자금은 현재 로컬 저장만 사용 중입니다. Secrets 설정을 확인하세요.")
 
 
 end_date = (
@@ -3333,7 +3538,9 @@ portfolio_fallback_fx = portfolio_fx_snapshot.get("rate")
 v9_fx_daily = pd.DataFrame(columns=["Date", "USD_KRW"])
 v9_quantity_overrides = {}
 v9_trade_overrides = st.session_state.get("v9_trade_overrides", {})
+v9_manual_trades = _sanitize_v9_manual_trades(st.session_state.get("v9_manual_trades", []))
 realized_execution_adjustment = 0.0
+manual_realized_profit = 0.0
 net_external_cashflow = 0.0
 
 if strategy_mode.startswith("V9"):
@@ -3386,17 +3593,30 @@ if strategy_mode.startswith("V9"):
             fallback_fx=portfolio_fallback_fx,
         )
 
+    # 전략에 없던 수동 추가 거래는 'NAV 반영'으로 저장한 경우 실현손익을 실전 NAV에 추가합니다.
+    # 기존 전략 거래와 중복되는 거래를 수동 추가하면 이중 반영될 수 있으므로 수동 추가는 전략표에 없는 거래에만 사용합니다.
+    if v9_manual_trades:
+        manual_dates = [pd.Timestamp(x["entry_date"]) for x in v9_manual_trades]
+        manual_fx = get_usdkrw_daily_rates(min(manual_dates), max(manual_dates)) if manual_dates else v9_fx_daily
+        manual_realized_profit = calculate_v9_manual_realized_profit(
+            v9_manual_trades,
+            fx_daily=manual_fx,
+            fallback_fx=portfolio_fallback_fx,
+        )
+
     # 추가 입출금은 백테스트 엔진과 분리해 실전 현금/NAV에만 더합니다.
     # 실제수량·실제 체결 보정과 함께 다음 신규매수 금액(NAV/7)의 기준이 됩니다.
     net_external_cashflow = float(v9_cashflow_summary.get("net", 0.0))
     live_cash = (
         float(actual_portfolio["cash"])
         + realized_execution_adjustment
+        + manual_realized_profit
         + net_external_cashflow
     )
     live_nav = (
         float(actual_portfolio["nav"])
         + realized_execution_adjustment
+        + manual_realized_profit
         + net_external_cashflow
     )
     open_positions_display = build_v9_open_positions_table(
@@ -3937,6 +4157,10 @@ def render_compact_trading_dashboard():
             st.write(
                 f"실제 체결 보정손익: {realized_execution_adjustment:+,.0f}원 "
                 f"({len(v9_trade_overrides):,}건 수정 저장)"
+            )
+            st.write(
+                f"수동 추가 거래 실현손익: {manual_realized_profit:+,.0f}원 "
+                f"({sum(1 for x in v9_manual_trades if x.get('affect_nav', True)):,}건 NAV 반영)"
             )
         st.write(f"미국 주문 대상일: {action_session.date()} · {session_status}")
         st.write(f"신호 기준일: {signal_date_text}")
@@ -5126,6 +5350,148 @@ with tab6:
 
     if strategy_mode.startswith("V9"):
         st.subheader("📋 실제 거래내역(Actual Trades)")
+
+        with st.expander("➕ 수동 거래 추가 / 구글시트 기록 가져오기"):
+            st.caption(
+                "전략 백테스트에 존재하지 않는 실제 청산거래를 추가할 수 있습니다. "
+                "기존 전략 거래와 동일한 거래를 다시 추가하면 NAV 손익이 이중 반영될 수 있습니다."
+            )
+            mc1, mc2 = st.columns(2)
+            manual_entry_date = mc1.date_input("매수일", value=start_date, key="manual_trade_entry_date")
+            manual_exit_date = mc2.date_input("매도일", value=min(max_date, date.today()), key="manual_trade_exit_date")
+            mp1, mp2, mp3 = st.columns(3)
+            manual_entry_price = mp1.number_input("매수가($)", min_value=0.01, value=1.00, step=0.01, key="manual_trade_entry_price")
+            manual_exit_price = mp2.number_input("매도가($)", min_value=0.01, value=1.00, step=0.01, key="manual_trade_exit_price")
+            manual_qty = mp3.number_input("수량(주)", min_value=1, value=1, step=1, key="manual_trade_qty")
+            ms1, ms2 = st.columns(2)
+            manual_strategy = ms1.selectbox(
+                "매도전략",
+                ["일반 LOC(+2.7%)", "방어 LOC(+$0.10)", "TIME/MOC", "수동 매도", "기타"],
+                index=3,
+                key="manual_trade_strategy",
+            )
+            manual_affect_nav = ms2.checkbox(
+                "실전 NAV에 손익 반영",
+                value=True,
+                key="manual_trade_affect_nav",
+                help="과거 실제 운용손익을 현재 실전 NAV에 이어서 반영하려면 체크합니다.",
+            )
+            manual_note = st.text_input("메모(선택)", key="manual_trade_note")
+            if st.button("➕ 거래 1건 추가", use_container_width=True, key="add_manual_trade"):
+                if manual_exit_date < manual_entry_date:
+                    st.error("매도일은 매수일보다 빠를 수 없습니다.")
+                else:
+                    new_item = {
+                        "id": uuid.uuid4().hex,
+                        "entry_date": pd.Timestamp(manual_entry_date).date().isoformat(),
+                        "exit_date": pd.Timestamp(manual_exit_date).date().isoformat(),
+                        "entry_price": float(manual_entry_price),
+                        "exit_price": float(manual_exit_price),
+                        "quantity": int(manual_qty),
+                        "exit_strategy": manual_strategy,
+                        "note": manual_note,
+                        "affect_nav": bool(manual_affect_nav),
+                    }
+                    updated_manual = _sanitize_v9_manual_trades(
+                        st.session_state.get("v9_manual_trades", []) + [new_item]
+                    )
+                    ok, msg = save_persisted_v9_manual_trades(updated_manual)
+                    if ok:
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+            st.divider()
+            st.markdown("**구글시트 → CSV 일괄 가져오기**")
+            template_df = pd.DataFrame([{
+                "매수일": "2026-01-02",
+                "매도일": "2026-01-09",
+                "매수가($)": 30.50,
+                "매도가($)": 31.20,
+                "수량(주)": 10,
+                "매도전략": "수동 매도",
+                "메모": "기존 구글시트 기록",
+                "NAV반영": True,
+            }])
+            st.download_button(
+                "CSV 양식 다운로드",
+                data=template_df.to_csv(index=False).encode("utf-8-sig"),
+                file_name="SOXL_manual_trades_template.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="download_manual_template",
+            )
+            manual_csv = st.file_uploader(
+                "구글시트에서 CSV로 내려받은 파일",
+                type=["csv"],
+                key="manual_trade_csv_upload",
+            )
+            if manual_csv is not None:
+                try:
+                    imported = pd.read_csv(manual_csv)
+                    required_cols = ["매수일", "매도일", "매수가($)", "매도가($)", "수량(주)"]
+                    missing_cols = [c for c in required_cols if c not in imported.columns]
+                    if missing_cols:
+                        st.error("필수 열이 없습니다: " + ", ".join(missing_cols))
+                    else:
+                        preview_cols = [c for c in ["매수일", "매도일", "매수가($)", "매도가($)", "수량(주)", "매도전략", "메모", "NAV반영"] if c in imported.columns]
+                        st.dataframe(imported[preview_cols].head(20), use_container_width=True, hide_index=True)
+                        if st.button("📥 CSV 거래내역 가져오기", use_container_width=True, key="import_manual_trades_csv"):
+                            new_rows = []
+                            for _, r in imported.iterrows():
+                                strategy_value = str(r.get("매도전략", "수동 매도")).strip()
+                                nav_raw = r.get("NAV반영", True)
+                                if isinstance(nav_raw, str):
+                                    affect_nav = nav_raw.strip().lower() not in {"false", "0", "no", "n", "아니오", "미반영"}
+                                else:
+                                    affect_nav = bool(nav_raw) if pd.notna(nav_raw) else True
+                                new_rows.append({
+                                    "id": uuid.uuid4().hex,
+                                    "entry_date": r["매수일"],
+                                    "exit_date": r["매도일"],
+                                    "entry_price": r["매수가($)"],
+                                    "exit_price": r["매도가($)"],
+                                    "quantity": r["수량(주)"],
+                                    "exit_strategy": strategy_value,
+                                    "note": str(r.get("메모", "")) if pd.notna(r.get("메모", "")) else "",
+                                    "affect_nav": affect_nav,
+                                })
+                            before = len(st.session_state.get("v9_manual_trades", []))
+                            merged_manual = _sanitize_v9_manual_trades(
+                                st.session_state.get("v9_manual_trades", []) + new_rows
+                            )
+                            added = len(merged_manual) - before
+                            ok, msg = save_persisted_v9_manual_trades(merged_manual)
+                            if ok:
+                                st.success(f"{added:,}건을 가져왔습니다.")
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                except Exception as e:
+                    st.error(f"CSV 읽기 실패: {e}")
+
+            current_manual = _sanitize_v9_manual_trades(st.session_state.get("v9_manual_trades", []))
+            if current_manual:
+                st.divider()
+                st.markdown(f"**현재 수동 추가 거래: {len(current_manual):,}건**")
+                manual_options = {
+                    f"{x['entry_date']} → {x['exit_date']} | {x['quantity']}주 | {x['entry_price']:.2f}→{x['exit_price']:.2f} | {x.get('note','')}": x["id"]
+                    for x in reversed(current_manual)
+                }
+                delete_manual_label = st.selectbox(
+                    "삭제할 수동 거래",
+                    list(manual_options.keys()),
+                    key="delete_manual_trade_select",
+                )
+                if st.button("🗑️ 선택 거래 삭제", use_container_width=True, key="delete_manual_trade"):
+                    delete_manual_id = manual_options[delete_manual_label]
+                    remaining_manual = [x for x in current_manual if x["id"] != delete_manual_id]
+                    ok, msg = save_persisted_v9_manual_trades(remaining_manual)
+                    if ok:
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
         st.caption(
             "전략 체결값이 기본으로 입력되어 있으며, 실제 매매가 달랐던 거래만 날짜·가격·수량·매도전략을 수정해 저장할 수 있습니다. "
             "저장한 실제 체결 손익은 실전 현금·총자산(NAV)·다음 매수금액에 반영되지만, 전략 백테스트의 연평균 복리수익률(CAGR)·최대 낙폭(MDD)에는 영향을 주지 않습니다."
@@ -5166,6 +5532,17 @@ with tab6:
                 fx_daily=trades_fx_daily,
                 fallback_fx=portfolio_fallback_fx,
             )
+            manual_for_editor = _sanitize_v9_manual_trades(st.session_state.get("v9_manual_trades", []))
+            if manual_for_editor:
+                manual_entry_dates = [pd.Timestamp(x["entry_date"]) for x in manual_for_editor]
+                manual_fx_daily = get_usdkrw_daily_rates(min(manual_entry_dates), max(manual_entry_dates)) if manual_entry_dates else trades_fx_daily
+                manual_records = build_v9_manual_trade_records(
+                    manual_for_editor,
+                    fx_daily=manual_fx_daily,
+                    fallback_fx=portfolio_fallback_fx,
+                )
+                if not manual_records.empty:
+                    actual_records_all = pd.concat([actual_records_all, manual_records], ignore_index=True, sort=False)
 
             # 실제 거래내역에서 바로 확인할 수 있는 핵심 결과만 요약합니다.
             # 아래 편집표와 같은 데이터를 다시 표 형태로 반복 표시하지 않습니다.
@@ -5221,8 +5598,9 @@ with tab6:
             elif view_choice == "최근 100건":
                 actual_records = actual_records.head(100)
 
+            actual_records["구분"] = actual_records.get("_source", "strategy").map({"strategy": "전략연결", "manual": "수동추가"}).fillna("전략연결")
             editor_cols = [
-                "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
+                "구분", "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
                 "매도전략", "투자금(원)", "수익률", "손익(원)", "수정",
             ]
             editor_df = actual_records.set_index("_key")[editor_cols].copy()
@@ -5243,8 +5621,9 @@ with tab6:
                 hide_index=True,
                 height=editor_height,
                 row_height=38,
-                disabled=["투자금(원)", "수익률", "손익(원)", "수정"],
+                disabled=["구분", "투자금(원)", "수익률", "손익(원)", "수정"],
                 column_config={
+                    "구분": st.column_config.TextColumn("구분", width="small"),
                     "매수일": st.column_config.DateColumn("✏️ 매수일", format="YYYY-MM-DD", width="small"),
                     "매도일": st.column_config.DateColumn("✏️ 매도일", format="YYYY-MM-DD", width="small"),
                     "매수가($)": st.column_config.NumberColumn("✏️ 매수가", min_value=0.01, step=0.01, format="$%.2f", width="small"),
@@ -5310,6 +5689,21 @@ with tab6:
                         validation_error = "매수가와 매도가는 0보다 커야 합니다."
                         break
 
+                    if str(base.get("_source", "strategy")) == "manual":
+                        manual_id = str(base.get("_manual_id"))
+                        for manual_item in manual_for_editor:
+                            if manual_item["id"] == manual_id:
+                                manual_item.update({
+                                    "entry_date": actual_entry_date.isoformat(),
+                                    "exit_date": actual_exit_date.isoformat(),
+                                    "entry_price": actual_entry_price,
+                                    "exit_price": actual_exit_price,
+                                    "quantity": actual_qty,
+                                    "exit_strategy": actual_strategy,
+                                })
+                                break
+                        continue
+
                     strategy_entry_date = pd.Timestamp(base["전략 매수일"]).date()
                     strategy_exit_date = pd.Timestamp(base["전략 매도일"]).date()
                     strategy_entry_price = float(base["전략 매수가"])
@@ -5346,6 +5740,7 @@ with tab6:
                 else:
                     st.session_state["v9_trade_overrides"] = new_overrides
                     st.session_state["v9_quantity_overrides"] = updated_qty_map
+                    st.session_state["v9_manual_trades"] = _sanitize_v9_manual_trades(manual_for_editor)
                     ok, msg = save_persisted_v9_trade_overrides(
                         new_overrides, quantity_map=updated_qty_map
                     )
@@ -5362,12 +5757,13 @@ with tab6:
                 key="reset_v9_actual_trades",
             ):
                 displayed_keys = set(editor_df.index.astype(str))
+                strategy_displayed_keys = {k for k in displayed_keys if not str(k).startswith("manual|")}
                 reset_overrides = {
                     k: v for k, v in trade_overrides_for_editor.items()
-                    if k not in displayed_keys
+                    if k not in strategy_displayed_keys
                 }
                 reset_qty_map = dict(qty_map_for_trades)
-                for key in displayed_keys:
+                for key in strategy_displayed_keys:
                     reset_qty_map.pop(key, None)
                 st.session_state["v9_trade_overrides"] = reset_overrides
                 st.session_state["v9_quantity_overrides"] = reset_qty_map
@@ -5397,13 +5793,14 @@ with tab6:
             # 실제 거래내역 편집표 자체가 상세 손익표 역할을 하므로 중복 요약표는 제거했습니다.
 
             with st.expander("전략 기준값과 비교"):
-                strategy_compare = actual_records[[
+                strategy_only_records = actual_records[actual_records.get("_source", "strategy") != "manual"].copy()
+                strategy_compare = strategy_only_records[[
                     "전략 매수일", "전략 매도일", "전략 매수가", "전략 매도가",
                     "전략 수량", "전략 매도전략", "수정",
                 ]].copy()
-                strategy_compare["전략 매수가"] = strategy_compare["전략 매수가"].map(lambda x: f"${x:,.2f}")
-                strategy_compare["전략 매도가"] = strategy_compare["전략 매도가"].map(lambda x: f"${x:,.2f}")
-                strategy_compare["전략 수량"] = strategy_compare["전략 수량"].map(lambda x: f"{int(x):,}주")
+                strategy_compare["전략 매수가"] = strategy_compare["전략 매수가"].map(lambda x: f"${x:,.2f}" if pd.notna(x) else "-")
+                strategy_compare["전략 매도가"] = strategy_compare["전략 매도가"].map(lambda x: f"${x:,.2f}" if pd.notna(x) else "-")
+                strategy_compare["전략 수량"] = strategy_compare["전략 수량"].map(lambda x: f"{int(x):,}주" if pd.notna(x) else "-")
                 st.dataframe(
                     strategy_compare,
                     use_container_width=True,
