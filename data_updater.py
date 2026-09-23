@@ -1,220 +1,78 @@
-import pandas as pd
-import yfinance as yf
-import requests
-
+import time
 from pathlib import Path
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pandas as pd
+import requests
+import yfinance as yf
 
 TICKER = "SOXL"
 DATA_FILE = "SOXL_adjusted.csv"
-
-LOOKBACK_DAYS = 10
-
+LOOKBACK_DAYS = 14
 NY_TIMEZONE = ZoneInfo("America/New_York")
+YAHOO_URLS = [
+    "https://query1.finance.yahoo.com/v8/finance/chart/SOXL",
+    "https://query2.finance.yahoo.com/v8/finance/chart/SOXL",
+]
+NASDAQ_URL = "https://api.nasdaq.com/api/quote/SOXL/historical"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131 Safari/537.36",
+    "Accept": "application/json,text/plain,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nasdaq.com/",
+}
 
-YAHOO_CHART_URL = (
-    "https://query1.finance.yahoo.com"
-    "/v8/finance/chart/SOXL"
-)
 
-
-# ============================================================
-# EXISTING DATA
-# ============================================================
-
-def load_existing_data(
-    file_path=DATA_FILE
-):
+def load_existing_data(file_path=DATA_FILE):
     path = Path(file_path)
-
     if not path.exists():
-        raise FileNotFoundError(
-            f"기존 데이터 파일을 찾을 수 없습니다: "
-            f"{path.resolve()}"
-        )
-
+        raise FileNotFoundError(f"기존 데이터 파일을 찾을 수 없습니다: {path.resolve()}")
     df = pd.read_csv(path)
-
-    df.columns = [
-        str(c).strip()
-        for c in df.columns
-    ]
-
-    required = [
-        "Date",
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-    ]
-
-    missing = [
-        c for c in required
-        if c not in df.columns
-    ]
-
+    df.columns = [str(c).strip() for c in df.columns]
+    required = ["Date", "Open", "High", "Low", "Close", "Volume"]
+    missing = [c for c in required if c not in df.columns]
     if missing:
-        raise ValueError(
-            f"필수 컬럼이 없습니다: {missing}"
-        )
+        raise ValueError(f"필수 컬럼이 없습니다: {missing}")
+    return normalize_dataframe(df)
 
-    df["Date"] = pd.to_datetime(
-        df["Date"],
-        errors="coerce"
-    )
-
-    for col in [
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-    ]:
-        df[col] = pd.to_numeric(
-            df[col],
-            errors="coerce"
-        )
-
-    df = (
-        df
-        .dropna(
-            subset=[
-                "Date",
-                "Open",
-                "High",
-                "Low",
-                "Close",
-            ]
-        )
-        .sort_values("Date")
-        .drop_duplicates(
-            subset=["Date"],
-            keep="last"
-        )
-        .reset_index(drop=True)
-    )
-
-    return df
-
-
-# ============================================================
-# DOWNLOAD END DATE
-# ============================================================
-
-def get_download_end_date():
-    now_ny = datetime.now(
-        NY_TIMEZONE
-    )
-
-    today_ny = now_ny.date()
-
-    market_data_ready = (
-        now_ny.hour > 16
-        or (
-            now_ny.hour == 16
-            and now_ny.minute >= 15
-        )
-    )
-
-    if market_data_ready:
-        return (
-            today_ny
-            + timedelta(days=1)
-        )
-
-    return today_ny
-
-
-# ============================================================
-# NORMALIZE
-# ============================================================
 
 def normalize_dataframe(df):
     if df is None or df.empty:
         return pd.DataFrame()
-
     df = df.copy()
-
-    required = [
-        "Date",
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-    ]
-
-    missing = [
-        c for c in required
-        if c not in df.columns
-    ]
-
+    required = ["Date", "Open", "High", "Low", "Close", "Volume"]
+    missing = [c for c in required if c not in df.columns]
     if missing:
-        raise ValueError(
-            f"가격 데이터 필수 컬럼 누락: {missing}"
-        )
-
-    df["Date"] = pd.to_datetime(
-        df["Date"],
-        errors="coerce"
-    )
-
-    if df["Date"].dt.tz is not None:
-        df["Date"] = (
-            df["Date"]
-            .dt.tz_localize(None)
-        )
-
-    for col in [
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-    ]:
-        df[col] = pd.to_numeric(
-            df[col],
-            errors="coerce"
-        )
-
-    df = (
+        raise ValueError(f"가격 데이터 필수 컬럼 누락: {missing}")
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    try:
+        if df["Date"].dt.tz is not None:
+            df["Date"] = df["Date"].dt.tz_localize(None)
+    except AttributeError:
+        pass
+    for col in ["Open", "High", "Low", "Close", "Volume"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return (
         df[required]
-        .dropna(
-            subset=[
-                "Date",
-                "Open",
-                "High",
-                "Low",
-                "Close",
-            ]
-        )
+        .dropna(subset=["Date", "Open", "High", "Low", "Close"])
         .sort_values("Date")
-        .drop_duplicates(
-            subset=["Date"],
-            keep="last"
-        )
+        .drop_duplicates(subset=["Date"], keep="last")
         .reset_index(drop=True)
     )
 
-    return df
+
+def get_download_end_date():
+    """Yahoo의 end는 exclusive. 미국 동부시간 기준 당일 장 마감 후에는 다음날을 end로 사용."""
+    now_ny = datetime.now(NY_TIMEZONE)
+    today_ny = now_ny.date()
+    # 장 마감 직후 데이터 지연을 감안하되, 수동 실행 시 오전에도 전일까지는 항상 포함.
+    if now_ny.hour >= 16:
+        return today_ny + timedelta(days=1)
+    return today_ny
 
 
-# ============================================================
-# PRIMARY: YFINANCE
-# ============================================================
-
-def download_yfinance(
-    start_date,
-    end_date
-):
-    print()
-    print(
-        "[1차] yfinance 조회"
-    )
-
+def download_yfinance_download(start_date, end_date):
     try:
         df = yf.download(
             tickers=TICKER,
@@ -223,628 +81,250 @@ def download_yfinance(
             interval="1d",
             auto_adjust=True,
             actions=False,
-            repair=False,
+            repair=True,
             prepost=False,
             progress=False,
             threads=False,
             multi_level_index=False,
         )
-
         if df is None or df.empty:
             return pd.DataFrame()
-
-        df = df.reset_index()
-
-        df.columns = [
-            str(c).strip()
-            for c in df.columns
-        ]
-
-        return normalize_dataframe(
-            df
-        )
-
+        return normalize_dataframe(df.reset_index())
     except Exception as e:
-        print(
-            f"yfinance 조회 실패: {e}"
-        )
-
+        print(f"yfinance.download 실패: {e}")
         return pd.DataFrame()
 
 
-# ============================================================
-# FALLBACK: YAHOO CHART API
-# ============================================================
+def download_yfinance_history():
+    """start/end 경로가 지연될 때를 대비한 별도 yfinance history 경로."""
+    try:
+        df = yf.Ticker(TICKER).history(
+            period="1mo",
+            interval="1d",
+            auto_adjust=True,
+            actions=False,
+            repair=True,
+            prepost=False,
+        )
+        if df is None or df.empty:
+            return pd.DataFrame()
+        out = df.reset_index()
+        if "Datetime" in out.columns and "Date" not in out.columns:
+            out = out.rename(columns={"Datetime": "Date"})
+        return normalize_dataframe(out)
+    except Exception as e:
+        print(f"yfinance.history 실패: {e}")
+        return pd.DataFrame()
 
-def download_yahoo_chart_api(
-    start_date,
-    end_date
-):
-    print()
-    print(
-        "[2차] Yahoo Chart API 직접 조회"
-    )
 
-    start_dt = datetime(
-        start_date.year,
-        start_date.month,
-        start_date.day,
-        tzinfo=NY_TIMEZONE,
-    )
-
-    end_dt = datetime(
-        end_date.year,
-        end_date.month,
-        end_date.day,
-        tzinfo=NY_TIMEZONE,
-    )
-
-    period1 = int(
-        start_dt.timestamp()
-    )
-
-    period2 = int(
-        end_dt.timestamp()
-    )
-
+def download_yahoo_chart_api(url, start_date, end_date):
+    start_dt = datetime(start_date.year, start_date.month, start_date.day, tzinfo=NY_TIMEZONE)
+    end_dt = datetime(end_date.year, end_date.month, end_date.day, tzinfo=NY_TIMEZONE)
     params = {
-        "period1": period1,
-        "period2": period2,
+        "period1": int(start_dt.timestamp()),
+        "period2": int(end_dt.timestamp()),
         "interval": "1d",
         "includePrePost": "false",
         "events": "div,splits",
     }
-
-    headers = {
-        "User-Agent":
-            (
-                "Mozilla/5.0 "
-                "(Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 "
-                "(KHTML, like Gecko) "
-                "Chrome/120 Safari/537.36"
-            )
-    }
-
     try:
-        response = requests.get(
-            YAHOO_CHART_URL,
-            params=params,
-            headers=headers,
-            timeout=15,
-        )
-
-        response.raise_for_status()
-
-        payload = response.json()
-
-        chart = payload.get(
-            "chart",
-            {}
-        )
-
-        error = chart.get(
-            "error"
-        )
-
-        if error:
-            raise RuntimeError(
-                f"Yahoo API error: {error}"
-            )
-
-        results = chart.get(
-            "result"
-        )
-
+        r = requests.get(url, params=params, headers=HEADERS, timeout=20)
+        r.raise_for_status()
+        payload = r.json()
+        chart = payload.get("chart", {})
+        if chart.get("error"):
+            raise RuntimeError(chart["error"])
+        results = chart.get("result") or []
         if not results:
             return pd.DataFrame()
-
         result = results[0]
-
-        timestamps = (
-            result.get(
-                "timestamp"
-            )
-            or []
-        )
-
-        indicators = result.get(
-            "indicators",
-            {}
-        )
-
-        quote_list = indicators.get(
-            "quote",
-            []
-        )
-
+        timestamps = result.get("timestamp") or []
+        indicators = result.get("indicators", {})
+        quote_list = indicators.get("quote") or []
         if not quote_list:
             return pd.DataFrame()
-
-        quote = quote_list[0]
-
-        opens = quote.get(
-            "open",
-            []
-        )
-
-        highs = quote.get(
-            "high",
-            []
-        )
-
-        lows = quote.get(
-            "low",
-            []
-        )
-
-        closes = quote.get(
-            "close",
-            []
-        )
-
-        volumes = quote.get(
-            "volume",
-            []
-        )
-
+        q = quote_list[0]
+        adj_list = indicators.get("adjclose") or []
+        adj = (adj_list[0].get("adjclose") if adj_list else None) or []
         rows = []
-
-        for i, ts in enumerate(
-            timestamps
-        ):
+        for i, ts in enumerate(timestamps):
             try:
-                open_price = opens[i]
-                high_price = highs[i]
-                low_price = lows[i]
-                close_price = closes[i]
-
-                volume = (
-                    volumes[i]
-                    if i < len(volumes)
-                    else 0
-                )
-
-                if (
-                    open_price is None
-                    or high_price is None
-                    or low_price is None
-                    or close_price is None
-                ):
+                raw_close = q.get("close", [])[i]
+                raw_open = q.get("open", [])[i]
+                raw_high = q.get("high", [])[i]
+                raw_low = q.get("low", [])[i]
+                if None in (raw_open, raw_high, raw_low, raw_close):
                     continue
-
-                dt = datetime.fromtimestamp(
-                    ts,
-                    tz=NY_TIMEZONE,
-                )
-
-                rows.append(
-                    {
-                        "Date":
-                            pd.Timestamp(
-                                dt.date()
-                            ),
-
-                        "Open":
-                            float(open_price),
-
-                        "High":
-                            float(high_price),
-
-                        "Low":
-                            float(low_price),
-
-                        "Close":
-                            float(close_price),
-
-                        "Volume":
-                            float(
-                                volume or 0
-                            ),
-                    }
-                )
-
-            except (
-                IndexError,
-                TypeError,
-                ValueError,
-            ):
+                adj_close = adj[i] if i < len(adj) and adj[i] is not None else raw_close
+                factor = float(adj_close) / float(raw_close) if raw_close else 1.0
+                dt = datetime.fromtimestamp(ts, tz=NY_TIMEZONE)
+                vols = q.get("volume", [])
+                vol = vols[i] if i < len(vols) and vols[i] is not None else 0
+                rows.append({
+                    "Date": pd.Timestamp(dt.date()),
+                    "Open": float(raw_open) * factor,
+                    "High": float(raw_high) * factor,
+                    "Low": float(raw_low) * factor,
+                    "Close": float(adj_close),
+                    "Volume": float(vol),
+                })
+            except (IndexError, TypeError, ValueError, ZeroDivisionError):
                 continue
-
-        return normalize_dataframe(
-            pd.DataFrame(rows)
-        )
-
+        return normalize_dataframe(pd.DataFrame(rows))
     except Exception as e:
-        print(
-            f"Yahoo Chart API 조회 실패: {e}"
-        )
-
+        print(f"Yahoo Chart API 실패 ({url.split('/')[2]}): {e}")
         return pd.DataFrame()
 
 
-# ============================================================
-# COMBINE DOWNLOAD SOURCES
-# ============================================================
+def _parse_price(v):
+    if v is None:
+        return None
+    s = str(v).replace("$", "").replace(",", "").strip()
+    if not s or s in {"N/A", "--"}:
+        return None
+    return float(s)
 
-def download_recent_data(
-    start_date,
-    end_date
-):
-    print(
-        f"조회 범위 : "
-        f"{start_date} ~ "
-        f"{end_date} (exclusive)"
-    )
 
-    yf_df = download_yfinance(
-        start_date,
-        end_date,
-    )
+def download_nasdaq_recent(start_date, end_date):
+    """Yahoo 계열이 모두 지연/차단될 때 신규 일봉을 보완하는 독립 소스."""
+    params = {
+        "assetclass": "etf",
+        "fromdate": start_date.strftime("%m/%d/%Y"),
+        "limit": 100,
+    }
+    try:
+        r = requests.get(NASDAQ_URL, params=params, headers=HEADERS, timeout=20)
+        r.raise_for_status()
+        payload = r.json()
+        data = payload.get("data") or {}
+        table = data.get("tradesTable") or {}
+        rows_raw = table.get("rows") or []
+        rows = []
+        for x in rows_raw:
+            try:
+                dt = pd.to_datetime(x.get("date"), errors="coerce")
+                if pd.isna(dt):
+                    continue
+                if dt.date() < start_date or dt.date() >= end_date:
+                    continue
+                o = _parse_price(x.get("open"))
+                h = _parse_price(x.get("high"))
+                l = _parse_price(x.get("low"))
+                c = _parse_price(x.get("close"))
+                v = _parse_price(x.get("volume")) or 0
+                if None in (o, h, l, c):
+                    continue
+                rows.append({"Date": dt.normalize(), "Open": o, "High": h, "Low": l, "Close": c, "Volume": v})
+            except Exception:
+                continue
+        return normalize_dataframe(pd.DataFrame(rows)) if rows else pd.DataFrame()
+    except Exception as e:
+        print(f"Nasdaq API 실패: {e}")
+        return pd.DataFrame()
 
-    api_df = (
-        download_yahoo_chart_api(
-            start_date,
-            end_date,
+
+def download_recent_data(start_date, end_date):
+    sources = []
+    candidates = []
+
+    funcs = [
+        ("YFINANCE_DOWNLOAD", lambda: download_yfinance_download(start_date, end_date)),
+        ("YFINANCE_HISTORY", download_yfinance_history),
+        ("YAHOO_QUERY1", lambda: download_yahoo_chart_api(YAHOO_URLS[0], start_date, end_date)),
+        ("YAHOO_QUERY2", lambda: download_yahoo_chart_api(YAHOO_URLS[1], start_date, end_date)),
+        ("NASDAQ", lambda: download_nasdaq_recent(start_date, end_date)),
+    ]
+
+    for name, fn in funcs:
+        df = fn()
+        if df is not None and not df.empty:
+            # 조회 범위로 제한. history(period=1mo)는 범위를 넓게 반환할 수 있음.
+            df = df[(df["Date"].dt.date >= start_date) & (df["Date"].dt.date < end_date)].copy()
+        if df is not None and not df.empty:
+            print(f"{name:18s} 마지막 날짜: {df['Date'].max().date()} / {len(df)}행")
+            candidates.append(df)
+            sources.append(name)
+        else:
+            print(f"{name:18s} 마지막 날짜: 없음")
+
+    if not candidates:
+        return pd.DataFrame(), "NONE"
+
+    # 오래된 소스가 더 최신 데이터를 덮어쓰지 않도록, 모든 소스를 합치되 날짜별로
+    # 가장 마지막에 추가된 소스 값을 사용. Yahoo 계열 다음 Nasdaq 순서이며,
+    # Nasdaq은 최근 신규행 확보를 위한 fallback 역할.
+    combined = pd.concat(candidates, ignore_index=True)
+    combined = normalize_dataframe(combined)
+    return combined, "+".join(sources)
+
+
+def update_soxl_data(file_path=DATA_FILE):
+    existing = load_existing_data(file_path)
+    old_last = existing["Date"].max().normalize()
+    start_date = (old_last - pd.Timedelta(days=LOOKBACK_DAYS)).date()
+    end_date = get_download_end_date()
+
+    print(f"현재 CSV 마지막 날짜 : {old_last.date()}")
+    print(f"재조회 시작일        : {start_date}")
+    print(f"재조회 종료일        : {end_date} (exclusive)")
+    print(f"yfinance 버전        : {getattr(yf, '__version__', 'unknown')}")
+
+    downloaded = pd.DataFrame()
+    source = "NONE"
+    for attempt in range(1, 4):
+        print(f"\n=== 다운로드 시도 {attempt}/3 ===")
+        downloaded, source = download_recent_data(start_date, end_date)
+        if not downloaded.empty and downloaded["Date"].max().normalize() > old_last:
+            break
+        if attempt < 3:
+            time.sleep(8)
+
+    if downloaded.empty:
+        raise RuntimeError("모든 데이터 소스가 빈 결과를 반환했습니다. Actions 로그를 확인하세요.")
+
+    downloaded_last = downloaded["Date"].max().normalize()
+    print(f"통합 다운로드 마지막 날짜: {downloaded_last.date()} ({source})")
+
+    cutoff = pd.Timestamp(start_date)
+    keep_old = existing[existing["Date"] < cutoff].copy()
+    merged = pd.concat([keep_old, downloaded], ignore_index=True)
+    merged = normalize_dataframe(merged)
+
+    # 혹시 일부 소스가 중간 날짜를 누락하면 기존 행을 잃지 않도록 다시 합침.
+    merged = pd.concat([existing, merged], ignore_index=True)
+    merged = normalize_dataframe(merged)
+
+    new_last = merged["Date"].max().normalize()
+    rows_added = int((merged["Date"] > old_last).sum())
+    refreshed_dates = set(downloaded["Date"].dt.normalize()) & set(existing["Date"].dt.normalize())
+
+    merged.to_csv(file_path, index=False)
+
+    if new_last <= old_last:
+        now_ny = datetime.now(NY_TIMEZONE)
+        msg = (
+            f"새 일봉을 찾지 못했습니다. CSV 최신일={old_last.date()}, "
+            f"다운로드 최신일={downloaded_last.date()}, NY 현재시각={now_ny:%Y-%m-%d %H:%M}. "
+            "데이터 제공처 지연 또는 차단 가능성이 있습니다."
         )
-    )
-
-    if not yf_df.empty:
-        print(
-            "yfinance 마지막 날짜   : "
-            f"{yf_df['Date'].max().date()}"
-        )
+        print("WARNING:", msg)
     else:
-        print(
-            "yfinance 마지막 날짜   : 없음"
-        )
-
-    if not api_df.empty:
-        print(
-            "Yahoo API 마지막 날짜  : "
-            f"{api_df['Date'].max().date()}"
-        )
-    else:
-        print(
-            "Yahoo API 마지막 날짜  : 없음"
-        )
-
-    if (
-        yf_df.empty
-        and api_df.empty
-    ):
-        return (
-            pd.DataFrame(),
-            "NONE"
-        )
-
-    if yf_df.empty:
-        return (
-            api_df,
-            "YAHOO_API"
-        )
-
-    if api_df.empty:
-        return (
-            yf_df,
-            "YFINANCE"
-        )
-
-    # 두 소스 모두 있으면 병합
-    # Yahoo API 값을 최종 우선값으로 사용
-    combined = pd.concat(
-        [
-            yf_df,
-            api_df,
-        ],
-        ignore_index=True,
-    )
-
-    combined = (
-        combined
-        .sort_values("Date")
-        .drop_duplicates(
-            subset=["Date"],
-            keep="last",
-        )
-        .reset_index(drop=True)
-    )
-
-    return (
-        combined,
-        "YFINANCE+YAHOO_API"
-    )
-
-
-# ============================================================
-# UPDATE
-# ============================================================
-
-def update_soxl_data(
-    file_path=DATA_FILE
-):
-    existing_df = (
-        load_existing_data(
-            file_path
-        )
-    )
-
-    old_last_date = (
-        existing_df["Date"]
-        .max()
-        .normalize()
-    )
-
-    start_date = (
-        old_last_date
-        - pd.Timedelta(
-            days=LOOKBACK_DAYS
-        )
-    ).date()
-
-    end_date = (
-        get_download_end_date()
-    )
-
-    print(
-        f"현재 CSV 마지막 날짜 : "
-        f"{old_last_date.date()}"
-    )
-
-    print(
-        f"재조회 시작일        : "
-        f"{start_date}"
-    )
-
-    print(
-        f"재조회 종료일        : "
-        f"{end_date} (exclusive)"
-    )
-
-    (
-        downloaded_df,
-        source,
-    ) = download_recent_data(
-        start_date,
-        end_date,
-    )
-
-    if downloaded_df.empty:
-        return {
-            "updated": False,
-            "rows_added": 0,
-            "rows_refreshed": 0,
-            "old_last_date":
-                old_last_date.date(),
-            "new_last_date":
-                old_last_date.date(),
-            "source": source,
-            "message":
-                (
-                    "모든 다운로드 경로에서 "
-                    "데이터를 받지 못했습니다. "
-                    "기존 CSV는 변경하지 않았습니다."
-                ),
-        }
-
-    downloaded_last_date = (
-        downloaded_df["Date"]
-        .max()
-        .normalize()
-    )
-
-    # ========================================================
-    # BACKUP
-    # ========================================================
-
-    file_path_obj = Path(
-        file_path
-    )
-
-    backup_file = (
-        file_path_obj
-        .with_name(
-            "SOXL_adjusted_backup.csv"
-        )
-    )
-
-    existing_df.to_csv(
-        backup_file,
-        index=False,
-        encoding="utf-8-sig",
-    )
-
-    # ========================================================
-    # MERGE
-    # ========================================================
-
-    first_downloaded_date = (
-        downloaded_df["Date"]
-        .min()
-        .normalize()
-    )
-
-    old_before_refresh = (
-        existing_df[
-            existing_df["Date"]
-            < first_downloaded_date
-        ]
-        .copy()
-    )
-
-    combined_df = pd.concat(
-        [
-            old_before_refresh,
-            downloaded_df,
-        ],
-        ignore_index=True,
-    )
-
-    combined_df = (
-        combined_df
-        .sort_values("Date")
-        .drop_duplicates(
-            subset=["Date"],
-            keep="last",
-        )
-        .reset_index(drop=True)
-    )
-
-    new_last_date = (
-        combined_df["Date"]
-        .max()
-        .normalize()
-    )
-
-    rows_added = int(
-        (
-            combined_df["Date"]
-            > old_last_date
-        ).sum()
-    )
-
-    rows_refreshed = int(
-        (
-            downloaded_df["Date"]
-            <= old_last_date
-        ).sum()
-    )
-
-    # ========================================================
-    # SAVE
-    # ========================================================
-
-    combined_df.to_csv(
-        file_path,
-        index=False,
-        encoding="utf-8-sig",
-    )
-
-    updated = (
-        new_last_date
-        > old_last_date
-    )
-
-    if updated:
-        message = (
-            f"{rows_added}개 신규 거래일 추가, "
-            f"{rows_refreshed}개 최근 거래일 재검증"
-        )
-    else:
-        message = (
-            f"신규 거래일 없음, "
-            f"{rows_refreshed}개 최근 거래일 재검증"
-        )
+        msg = f"SOXL 데이터 업데이트 완료: {old_last.date()} → {new_last.date()} ({source})"
 
     return {
-        "updated":
-            updated,
-
-        "rows_added":
-            rows_added,
-
-        "rows_refreshed":
-            rows_refreshed,
-
-        "old_last_date":
-            old_last_date.date(),
-
-        "new_last_date":
-            new_last_date.date(),
-
-        "downloaded_last_date":
-            downloaded_last_date.date(),
-
-        "source":
-            source,
-
-        "message":
-            message,
+        "updated": bool(new_last > old_last),
+        "rows_added": rows_added,
+        "rows_refreshed": len(refreshed_dates),
+        "old_last_date": old_last.date(),
+        "new_last_date": new_last.date(),
+        "downloaded_last_date": downloaded_last.date(),
+        "source": source,
+        "message": msg,
     }
 
 
-# ============================================================
-# MAIN
-# ============================================================
-
 if __name__ == "__main__":
-
-    print("=" * 76)
-    print(
-        "SOXL DATA UPDATER "
-        "- DUAL SOURCE VERSION"
-    )
-    print("=" * 76)
-
-    try:
-        result = (
-            update_soxl_data()
-        )
-
-        print()
-        print("=" * 76)
-        print("UPDATE RESULT")
-        print("=" * 76)
-
-        print(
-            f"데이터 소스       : "
-            f"{result['source']}"
-        )
-
-        print(
-            f"업데이트 여부     : "
-            f"{result['updated']}"
-        )
-
-        print(
-            f"신규 거래일       : "
-            f"{result['rows_added']}"
-        )
-
-        print(
-            f"최근 재검증 거래일: "
-            f"{result['rows_refreshed']}"
-        )
-
-        print(
-            f"기존 마지막일     : "
-            f"{result['old_last_date']}"
-        )
-
-        print(
-            f"최신 마지막일     : "
-            f"{result['new_last_date']}"
-        )
-
-        if (
-            "downloaded_last_date"
-            in result
-        ):
-            print(
-                f"다운로드 마지막일 : "
-                f"{result['downloaded_last_date']}"
-            )
-
-        print(
-            f"메시지            : "
-            f"{result['message']}"
-        )
-
-        print()
-        print(
-            "백업 파일         : "
-            "SOXL_adjusted_backup.csv"
-        )
-
-    except Exception as e:
-        print()
-        print(
-            f"업데이트 실패: {e}"
-        )
-
-        print(
-            "기존 SOXL_adjusted.csv는 "
-            "변경하지 않았습니다."
-        )
-
-        raise
+    result = update_soxl_data()
+    print("\n=== UPDATE RESULT ===")
+    for k, v in result.items():
+        print(f"{k:22s}: {v}")
