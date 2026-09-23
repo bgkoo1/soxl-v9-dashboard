@@ -6,7 +6,10 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 import yfinance as yf
-import pandas_market_calendars as mcal
+try:
+    import pandas_market_calendars as mcal
+except ModuleNotFoundError:
+    mcal = None
 
 TICKER = "SOXL"
 DATA_FILE = "SOXL_adjusted.csv"
@@ -260,17 +263,32 @@ def download_recent_data(start_date, end_date):
 
 
 def get_expected_latest_trading_day():
-    """Return the latest fully completed NYSE trading day in New York time."""
+    """Return the latest fully completed NYSE trading day in New York time.
+
+    pandas_market_calendars is optional so importing data_updater never prevents
+    the Streamlit app from starting. GitHub Actions installs the package and
+    therefore uses the exact NYSE calendar. If it is unavailable in the web
+    app, fall back to the latest completed weekday.
+    """
     now_ny = datetime.now(NY_TIMEZONE)
     today = pd.Timestamp(now_ny.date())
-    # Before 16:30 ET, treat today's bar as not yet finalized.
     end_day = today if (now_ny.hour > 16 or (now_ny.hour == 16 and now_ny.minute >= 30)) else today - pd.Timedelta(days=1)
-    start_day = end_day - pd.Timedelta(days=10)
-    nyse = mcal.get_calendar("NYSE")
-    sched = nyse.schedule(start_date=start_day.date(), end_date=end_day.date())
-    if sched.empty:
-        raise RuntimeError("NYSE 거래일 캘린더에서 최근 완료 거래일을 계산하지 못했습니다.")
-    return pd.Timestamp(sched.index[-1]).normalize()
+
+    if mcal is not None:
+        start_day = end_day - pd.Timedelta(days=10)
+        nyse = mcal.get_calendar("NYSE")
+        sched = nyse.schedule(start_date=start_day.date(), end_date=end_day.date())
+        if not sched.empty:
+            return pd.Timestamp(sched.index[-1]).normalize()
+        print("WARNING: NYSE 캘린더 결과가 비어 있어 평일 기준 fallback을 사용합니다.")
+    else:
+        print("WARNING: pandas_market_calendars 미설치 - 평일 기준 fallback을 사용합니다.")
+
+    # Fallback for Streamlit runtime only. Actions should normally take the exact-calendar path above.
+    candidate = end_day.normalize()
+    while candidate.weekday() >= 5:  # Saturday/Sunday
+        candidate -= pd.Timedelta(days=1)
+    return candidate
 
 
 def update_soxl_data(file_path=DATA_FILE):
