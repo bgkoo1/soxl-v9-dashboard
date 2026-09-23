@@ -4,3 +4,6 @@ plotly
 yfinance
 requests
 cryptography
+scipy
+scikit-learn
+pandas-market-calendars

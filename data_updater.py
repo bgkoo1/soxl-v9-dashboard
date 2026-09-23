@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 import yfinance as yf
+import pandas_market_calendars as mcal
 
 TICKER = "SOXL"
 DATA_FILE = "SOXL_adjusted.csv"
@@ -258,23 +259,55 @@ def download_recent_data(start_date, end_date):
     return combined, "+".join(sources)
 
 
+def get_expected_latest_trading_day():
+    """Return the latest fully completed NYSE trading day in New York time."""
+    now_ny = datetime.now(NY_TIMEZONE)
+    today = pd.Timestamp(now_ny.date())
+    # Before 16:30 ET, treat today's bar as not yet finalized.
+    end_day = today if (now_ny.hour > 16 or (now_ny.hour == 16 and now_ny.minute >= 30)) else today - pd.Timedelta(days=1)
+    start_day = end_day - pd.Timedelta(days=10)
+    nyse = mcal.get_calendar("NYSE")
+    sched = nyse.schedule(start_date=start_day.date(), end_date=end_day.date())
+    if sched.empty:
+        raise RuntimeError("NYSE 거래일 캘린더에서 최근 완료 거래일을 계산하지 못했습니다.")
+    return pd.Timestamp(sched.index[-1]).normalize()
+
+
 def update_soxl_data(file_path=DATA_FILE):
     existing = load_existing_data(file_path)
     old_last = existing["Date"].max().normalize()
+    expected_last = get_expected_latest_trading_day()
     start_date = (old_last - pd.Timedelta(days=LOOKBACK_DAYS)).date()
     end_date = get_download_end_date()
 
     print(f"현재 CSV 마지막 날짜 : {old_last.date()}")
+    print(f"완료된 최신 거래일    : {expected_last.date()}")
     print(f"재조회 시작일        : {start_date}")
     print(f"재조회 종료일        : {end_date} (exclusive)")
     print(f"yfinance 버전        : {getattr(yf, '__version__', 'unknown')}")
+
+    # 이미 최신이면 파일을 다시 쓰지 않고 정상 종료한다.
+    if old_last >= expected_last:
+        msg = f"이미 최신 데이터입니다: {old_last.date()}"
+        print(msg)
+        return {
+            "updated": False,
+            "rows_added": 0,
+            "rows_refreshed": 0,
+            "old_last_date": old_last.date(),
+            "new_last_date": old_last.date(),
+            "downloaded_last_date": old_last.date(),
+            "expected_last_date": expected_last.date(),
+            "source": "NONE",
+            "message": msg,
+        }
 
     downloaded = pd.DataFrame()
     source = "NONE"
     for attempt in range(1, 4):
         print(f"\n=== 다운로드 시도 {attempt}/3 ===")
         downloaded, source = download_recent_data(start_date, end_date)
-        if not downloaded.empty and downloaded["Date"].max().normalize() > old_last:
+        if not downloaded.empty and downloaded["Date"].max().normalize() >= expected_last:
             break
         if attempt < 3:
             time.sleep(8)
@@ -285,39 +318,43 @@ def update_soxl_data(file_path=DATA_FILE):
     downloaded_last = downloaded["Date"].max().normalize()
     print(f"통합 다운로드 마지막 날짜: {downloaded_last.date()} ({source})")
 
-    cutoff = pd.Timestamp(start_date)
-    keep_old = existing[existing["Date"] < cutoff].copy()
-    merged = pd.concat([keep_old, downloaded], ignore_index=True)
-    merged = normalize_dataframe(merged)
+    # 완료된 최신 거래일까지 확보하지 못했으면 성공 처리하지 않는다.
+    if downloaded_last < expected_last:
+        raise RuntimeError(
+            "최신 완료 거래일 데이터 확보 실패: "
+            f"CSV={old_last.date()}, 다운로드={downloaded_last.date()}, 기대={expected_last.date()}, source={source}"
+        )
 
-    # 혹시 일부 소스가 중간 날짜를 누락하면 기존 행을 잃지 않도록 다시 합침.
-    merged = pd.concat([existing, merged], ignore_index=True)
-    merged = normalize_dataframe(merged)
+    # 기존 이력은 그대로 보존하고, 실제 신규 날짜만 append한다.
+    new_rows = downloaded[(downloaded["Date"] > old_last) & (downloaded["Date"] <= expected_last)].copy()
+    new_rows = normalize_dataframe(new_rows)
+    if new_rows.empty:
+        raise RuntimeError(
+            f"다운로드는 {downloaded_last.date()}까지 왔지만 CSV {old_last.date()} 이후 신규 행이 없습니다."
+        )
 
+    merged = pd.concat([existing, new_rows], ignore_index=True)
+    merged = normalize_dataframe(merged)
     new_last = merged["Date"].max().normalize()
-    rows_added = int((merged["Date"] > old_last).sum())
-    refreshed_dates = set(downloaded["Date"].dt.normalize()) & set(existing["Date"].dt.normalize())
+    rows_added = len(new_rows)
+
+    if new_last < expected_last:
+        raise RuntimeError(
+            f"병합 후 최신일이 기대 거래일보다 오래되었습니다: 병합={new_last.date()}, 기대={expected_last.date()}"
+        )
 
     merged.to_csv(file_path, index=False)
-
-    if new_last <= old_last:
-        now_ny = datetime.now(NY_TIMEZONE)
-        msg = (
-            f"새 일봉을 찾지 못했습니다. CSV 최신일={old_last.date()}, "
-            f"다운로드 최신일={downloaded_last.date()}, NY 현재시각={now_ny:%Y-%m-%d %H:%M}. "
-            "데이터 제공처 지연 또는 차단 가능성이 있습니다."
-        )
-        print("WARNING:", msg)
-    else:
-        msg = f"SOXL 데이터 업데이트 완료: {old_last.date()} → {new_last.date()} ({source})"
+    msg = f"SOXL 데이터 업데이트 완료: {old_last.date()} → {new_last.date()} ({source})"
+    print(msg)
 
     return {
-        "updated": bool(new_last > old_last),
-        "rows_added": rows_added,
-        "rows_refreshed": len(refreshed_dates),
+        "updated": True,
+        "rows_added": int(rows_added),
+        "rows_refreshed": 0,
         "old_last_date": old_last.date(),
         "new_last_date": new_last.date(),
         "downloaded_last_date": downloaded_last.date(),
+        "expected_last_date": expected_last.date(),
         "source": source,
         "message": msg,
     }
