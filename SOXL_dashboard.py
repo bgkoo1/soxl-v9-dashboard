@@ -669,10 +669,25 @@ def _sanitize_v9_manual_trades(items):
     return cleaned
 
 
+def _sanitize_v9_entry_prices(items):
+    """현재 보유 슬롯의 실제 매수체결가 오버라이드를 안전한 형식으로 정리합니다."""
+    cleaned = {}
+    if not isinstance(items, dict):
+        return cleaned
+    for k, v in items.items():
+        try:
+            price = float(v)
+            if price > 0:
+                cleaned[str(k)] = round(price, 6)
+        except (TypeError, ValueError):
+            continue
+    return cleaned
+
+
 def _load_persisted_v9_state():
     """GitHub 암호화 파일에서 설정 + 실제수량 + 입출금 + 실제 거래값을 함께 복원합니다."""
     config = _portfolio_persistence_config()
-    empty = {"settings": _sanitize_dashboard_settings({}), "quantities": {}, "cashflows": [], "trade_overrides": {}, "manual_trades": []}
+    empty = {"settings": _sanitize_dashboard_settings({}), "quantities": {}, "entry_prices": {}, "cashflows": [], "trade_overrides": {}, "manual_trades": []}
     if config is None:
         return empty, "Secrets 미설정"
 
@@ -703,6 +718,7 @@ def _load_persisted_v9_state():
             except (TypeError, ValueError):
                 continue
 
+        entry_prices = _sanitize_v9_entry_prices(payload.get("entry_prices", {}))
         settings = _sanitize_dashboard_settings(payload.get("settings", {}))
         cashflows = _sanitize_v9_cashflows(payload.get("cashflows", []))
         trade_overrides = _sanitize_v9_trade_overrides(payload.get("trade_overrides", {}))
@@ -710,6 +726,7 @@ def _load_persisted_v9_state():
         return {
             "settings": settings,
             "quantities": cleaned_qty,
+            "entry_prices": entry_prices,
             "cashflows": cashflows,
             "trade_overrides": trade_overrides,
             "manual_trades": manual_trades,
@@ -720,7 +737,7 @@ def _load_persisted_v9_state():
         return empty, f"영구 저장 불러오기 실패: {e}"
 
 
-def _save_persisted_v9_state(quantity_map=None, cashflows=None, trade_overrides=None, settings=None, manual_trades=None):
+def _save_persisted_v9_state(quantity_map=None, entry_prices=None, cashflows=None, trade_overrides=None, settings=None, manual_trades=None):
     """실제수량·입출금·실제 체결값을 하나의 암호화 파일로 저장합니다."""
     config = _portfolio_persistence_config()
     if config is None:
@@ -732,16 +749,18 @@ def _save_persisted_v9_state(quantity_map=None, cashflows=None, trade_overrides=
             cleaned_qty[str(k)] = max(1, int(round(float(v))))
         except (TypeError, ValueError):
             continue
+    cleaned_entry_prices = _sanitize_v9_entry_prices(entry_prices)
     cleaned_cashflows = _sanitize_v9_cashflows(cashflows)
     cleaned_trade_overrides = _sanitize_v9_trade_overrides(trade_overrides)
     cleaned_settings = _sanitize_dashboard_settings(settings or {})
     cleaned_manual_trades = _sanitize_v9_manual_trades(manual_trades)
 
     payload = {
-        "version": 4,
+        "version": 5,
         "updated_at": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(),
         "settings": cleaned_settings,
         "quantities": cleaned_qty,
+        "entry_prices": cleaned_entry_prices,
         "cashflows": cleaned_cashflows,
         "trade_overrides": cleaned_trade_overrides,
         "manual_trades": cleaned_manual_trades,
@@ -803,6 +822,7 @@ def load_persisted_v9_quantities():
     """기존 호출부 호환용: 저장 상태에서 실제 보유수량만 반환합니다."""
     state, status = _load_persisted_v9_state()
     st.session_state["v9_settings"] = state.get("settings", {})
+    st.session_state["v9_entry_price_overrides"] = state.get("entry_prices", {})
     st.session_state["v9_cashflows"] = state.get("cashflows", [])
     st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
     st.session_state["v9_manual_trades"] = state.get("manual_trades", [])
@@ -814,6 +834,7 @@ def load_persisted_v9_cashflows():
     state, status = _load_persisted_v9_state()
     st.session_state["v9_settings"] = state.get("settings", {})
     st.session_state["v9_quantity_overrides"] = state.get("quantities", {})
+    st.session_state["v9_entry_price_overrides"] = state.get("entry_prices", {})
     st.session_state["v9_cashflows"] = state.get("cashflows", [])
     st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
     st.session_state["v9_manual_trades"] = state.get("manual_trades", [])
@@ -825,6 +846,7 @@ def save_persisted_v9_quantities(quantity_map):
     """실제 보유수량 저장 시 기존 입출금 장부를 보존합니다."""
     return _save_persisted_v9_state(
         quantity_map=quantity_map,
+        entry_prices=st.session_state.get("v9_entry_price_overrides", {}),
         cashflows=st.session_state.get("v9_cashflows", []),
         trade_overrides=st.session_state.get("v9_trade_overrides", {}),
         settings=st.session_state.get("v9_settings", {}),
@@ -836,6 +858,7 @@ def save_persisted_v9_cashflows(cashflows):
     """입출금 장부 저장 시 기존 실제 보유수량을 보존합니다."""
     return _save_persisted_v9_state(
         quantity_map=st.session_state.get("v9_quantity_overrides", {}),
+        entry_prices=st.session_state.get("v9_entry_price_overrides", {}),
         cashflows=cashflows,
         trade_overrides=st.session_state.get("v9_trade_overrides", {}),
         settings=st.session_state.get("v9_settings", {}),
@@ -849,6 +872,7 @@ def load_persisted_v9_trade_overrides():
     state, status = _load_persisted_v9_state()
     st.session_state["v9_settings"] = state.get("settings", {})
     st.session_state["v9_quantity_overrides"] = state.get("quantities", {})
+    st.session_state["v9_entry_price_overrides"] = state.get("entry_prices", {})
     st.session_state["v9_cashflows"] = state.get("cashflows", [])
     st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
     st.session_state["v9_manual_trades"] = state.get("manual_trades", [])
@@ -858,6 +882,7 @@ def load_persisted_v9_trade_overrides():
 def save_persisted_v9_trade_overrides(trade_overrides, quantity_map=None):
     """실제 체결 거래 저장 시 수량/입출금 장부를 함께 보존합니다."""
     return _save_persisted_v9_state(
+        entry_prices=st.session_state.get("v9_entry_price_overrides", {}),
         quantity_map=(
             quantity_map
             if quantity_map is not None
@@ -875,6 +900,7 @@ def save_persisted_dashboard_settings(settings):
     st.session_state["v9_settings"] = cleaned
     return _save_persisted_v9_state(
         quantity_map=st.session_state.get("v9_quantity_overrides", {}),
+        entry_prices=st.session_state.get("v9_entry_price_overrides", {}),
         cashflows=st.session_state.get("v9_cashflows", []),
         trade_overrides=st.session_state.get("v9_trade_overrides", {}),
         settings=cleaned,
@@ -888,10 +914,25 @@ def save_persisted_v9_manual_trades(manual_trades):
     st.session_state["v9_manual_trades"] = cleaned
     return _save_persisted_v9_state(
         quantity_map=st.session_state.get("v9_quantity_overrides", {}),
+        entry_prices=st.session_state.get("v9_entry_price_overrides", {}),
         cashflows=st.session_state.get("v9_cashflows", []),
         trade_overrides=st.session_state.get("v9_trade_overrides", {}),
         settings=st.session_state.get("v9_settings", {}),
         manual_trades=cleaned,
+    )
+
+
+def save_persisted_v9_open_position_overrides(quantity_map, entry_price_map):
+    """현재 슬롯의 실제 보유수량과 실제 매수체결가를 함께 영구 저장합니다."""
+    st.session_state["v9_quantity_overrides"] = dict(quantity_map or {})
+    st.session_state["v9_entry_price_overrides"] = _sanitize_v9_entry_prices(entry_price_map or {})
+    return _save_persisted_v9_state(
+        quantity_map=st.session_state["v9_quantity_overrides"],
+        entry_prices=st.session_state["v9_entry_price_overrides"],
+        cashflows=st.session_state.get("v9_cashflows", []),
+        trade_overrides=st.session_state.get("v9_trade_overrides", {}),
+        settings=st.session_state.get("v9_settings", {}),
+        manual_trades=st.session_state.get("v9_manual_trades", []),
     )
 
 
@@ -1455,6 +1496,7 @@ def calculate_v9_actual_portfolio(
     model_cash,
     confirmed_close,
     qty_overrides,
+    entry_price_overrides=None,
     fx_daily=None,
     fallback_fx=None,
 ):
@@ -1469,7 +1511,9 @@ def calculate_v9_actual_portfolio(
     for pos in open_positions or []:
         key = v9_position_key(pos)
         entry_date = pd.Timestamp(pos["entry_date"]).normalize()
-        entry_price = float(pos["entry_price"])
+        strategy_entry_price = float(pos["entry_price"])
+        key = v9_position_key(pos)
+        entry_price = float((entry_price_overrides or {}).get(key, strategy_entry_price))
         model_invested = float(pos["invested"])
         entry_fx = lookup_entry_fx(entry_date, fx_daily, fallback_fx)
 
@@ -1477,7 +1521,7 @@ def calculate_v9_actual_portfolio(
             actual_qty = None
             actual_invested = model_invested
         else:
-            strategy_qty = int(round(model_invested / (entry_price * entry_fx)))
+            strategy_qty = int(round(model_invested / (strategy_entry_price * entry_fx)))
             actual_qty = int(qty_overrides.get(key, max(1, strategy_qty)))
             actual_invested = actual_qty * entry_price * entry_fx
 
@@ -1735,6 +1779,7 @@ def build_v9_open_positions_table(
     fx_daily=None,
     fallback_fx=None,
     qty_overrides=None,
+    entry_price_overrides=None,
 ):
     """V9 미청산 포지션을 현재 적용 LOC와 실제 입력수량 기준으로 표시합니다."""
     if not open_positions:
@@ -1743,7 +1788,9 @@ def build_v9_open_positions_table(
     rows = []
     for slot_no, pos in enumerate(open_positions, start=1):
         entry_date = pd.Timestamp(pos["entry_date"]).normalize()
-        entry_price = float(pos["entry_price"])
+        strategy_entry_price = float(pos["entry_price"])
+        key = v9_position_key(pos)
+        entry_price = float((entry_price_overrides or {}).get(key, strategy_entry_price))
         invested = float(pos["invested"])
         deadline, estimated = get_moc_deadline(entry_date, holding_days=holding_days)
 
@@ -1777,11 +1824,10 @@ def build_v9_open_positions_table(
         # 실제 수량은 원화 매수금액을 매수일 USD/KRW로 달러 환산한 뒤 계산합니다.
         entry_fx = lookup_entry_fx(entry_date, fx_daily, fallback_fx)
         strategy_qty = (
-            int(round(invested / (entry_price * entry_fx)))
-            if entry_fx is not None and entry_fx > 0 and entry_price > 0
+            int(round(invested / (strategy_entry_price * entry_fx)))
+            if entry_fx is not None and entry_fx > 0 and strategy_entry_price > 0
             else None
         )
-        key = v9_position_key(pos)
         if strategy_qty is not None:
             selected_qty = int((qty_overrides or {}).get(key, max(1, strategy_qty)))
             actual_invested = selected_qty * entry_price * entry_fx
@@ -1794,7 +1840,8 @@ def build_v9_open_positions_table(
             "매수유형": str(pos.get("buy_type", "기본 MOC")),
             "매수일": entry_date.date(),
             "매수금액": f"{actual_invested:,.0f}원",
-            "매수가": f"${entry_price:,.2f}",
+            "전략 매수가": f"${strategy_entry_price:,.2f}",
+            "매수가": float(entry_price),
             "적용환율": f"{entry_fx:,.2f}원/$" if entry_fx is not None else "환율 조회 필요",
             "보유수량": f"{selected_qty:,.0f}주" if selected_qty is not None else "계산 불가",
             "현재가": f"${float(current_close):,.2f}",
@@ -1812,7 +1859,7 @@ def build_v9_open_positions_table(
 
 def build_live_open_holdings_df(
     strategy_mode, live_result, live_trades,
-    qty_overrides=None, fx_daily=None, fallback_fx=None,
+    qty_overrides=None, entry_price_overrides=None, fx_daily=None, fallback_fx=None,
 ):
     """실시간 평가손익 계산에 사용할 미청산 포지션 원자료."""
     if strategy_mode.startswith(("V9", "V10")):
@@ -1822,12 +1869,13 @@ def build_live_open_holdings_df(
         rows = []
         for p in positions:
             entry_date = pd.Timestamp(p["entry_date"]).normalize()
-            entry_price = float(p["entry_price"])
+            strategy_entry_price = float(p["entry_price"])
+            key = v9_position_key(p)
+            entry_price = float((entry_price_overrides or {}).get(key, strategy_entry_price))
             model_invested = float(p["invested"])
             entry_fx = lookup_entry_fx(entry_date, fx_daily, fallback_fx)
             if entry_fx is not None and entry_fx > 0 and entry_price > 0:
-                strategy_qty = int(round(model_invested / (entry_price * entry_fx)))
-                key = v9_position_key(p)
+                strategy_qty = int(round(model_invested / (strategy_entry_price * entry_fx)))
                 actual_qty = int((qty_overrides or {}).get(key, max(1, strategy_qty)))
                 actual_invested = actual_qty * entry_price * entry_fx
             else:
@@ -3582,6 +3630,7 @@ portfolio_fx_snapshot = get_usdkrw_realtime_snapshot() if strategy_mode.startswi
 portfolio_fallback_fx = portfolio_fx_snapshot.get("rate")
 v9_fx_daily = pd.DataFrame(columns=["Date", "USD_KRW"])
 v9_quantity_overrides = {}
+v9_entry_price_overrides = st.session_state.get("v9_entry_price_overrides", {})
 v9_trade_overrides = st.session_state.get("v9_trade_overrides", {})
 v9_manual_trades = _sanitize_v9_manual_trades(st.session_state.get("v9_manual_trades", []))
 realized_execution_adjustment = 0.0
@@ -3595,6 +3644,9 @@ if strategy_mode.startswith(("V9", "V10")):
         st.session_state["v9_trade_persistence_status"] = trade_override_status
     v9_trade_overrides = _sanitize_v9_trade_overrides(
         st.session_state.get("v9_trade_overrides", {})
+    )
+    v9_entry_price_overrides = _sanitize_v9_entry_prices(
+        st.session_state.get("v9_entry_price_overrides", {})
     )
     v9_open_positions = live_result.get("open_positions", [])
     if v9_open_positions:
@@ -3611,6 +3663,7 @@ if strategy_mode.startswith(("V9", "V10")):
         model_cash=live_cash,
         confirmed_close=live_close,
         qty_overrides=v9_quantity_overrides,
+        entry_price_overrides=v9_entry_price_overrides,
         fx_daily=v9_fx_daily,
         fallback_fx=portfolio_fallback_fx,
     )
@@ -3673,6 +3726,7 @@ if strategy_mode.startswith(("V9", "V10")):
         fx_daily=v9_fx_daily,
         fallback_fx=portfolio_fallback_fx,
         qty_overrides=v9_quantity_overrides,
+        entry_price_overrides=v9_entry_price_overrides,
     )
 else:
     live_nav = model_live_nav
@@ -4117,6 +4171,7 @@ def render_compact_trading_dashboard():
         live_result,
         live_trades,
         qty_overrides=v9_quantity_overrides,
+        entry_price_overrides=v9_entry_price_overrides,
         fx_daily=v9_fx_daily,
         fallback_fx=portfolio_fallback_fx,
     )
@@ -4415,6 +4470,7 @@ def render_compact_trading_dashboard():
             fx_daily=v9_fx_daily,
             fallback_fx=portfolio_fallback_fx,
             qty_overrides=v9_quantity_overrides,
+            entry_price_overrides=v9_entry_price_overrides,
         )
     else:
         realtime_positions = build_open_positions_table(
@@ -4451,13 +4507,13 @@ def render_compact_trading_dashboard():
 
     if strategy_mode.startswith(("V9", "V10")):
         preferred_cols = [
-            "슬롯", "매수유형", "매수일", "매수금액", "매수가", "적용환율", "보유수량",
+            "슬롯", "매수유형", "매수일", "매수금액", "전략 매수가", "매수가", "적용환율", "보유수량",
             "LOC 모드", "LOC 주문가", "현재가", "현재 수익률",
             "평가손익", "MOC 예정일", "남은 거래일", "상태",
         ]
         position_table = position_table[[c for c in preferred_cols if c in position_table.columns]]
 
-        # 보유수량은 Open Positions 표에서 직접 수정합니다.
+        # 실제 보유수량과 실제 매수체결가는 Open Positions 표에서 직접 수정합니다.
         editor_table = position_table.copy()
         editor_table["보유수량"] = (
             editor_table["보유수량"]
@@ -4492,13 +4548,17 @@ def render_compact_trading_dashboard():
             styled_editor,
             use_container_width=True,
             hide_index=True,
-            disabled=[c for c in editor_table.columns if c != "보유수량"],
+            disabled=[c for c in editor_table.columns if c not in {"보유수량", "매수가"}],
             column_config={
                 "LOC 모드": st.column_config.TextColumn("🔎 현재 LOC 모드", width="large"),
                 "LOC 주문가": st.column_config.TextColumn("🎯 LOC 주문가", width="medium"),
                 "보유수량": st.column_config.NumberColumn(
                     "✏️ 실제 보유수량", min_value=1, step=1, format="%d주", width="medium"
                 ),
+                "매수가": st.column_config.NumberColumn(
+                    "✏️ 실제 매수체결가", min_value=0.01, step=0.01, format="$%.2f", width="medium"
+                ),
+                "전략 매수가": st.column_config.TextColumn("전략 매수가", width="medium"),
                 "적용환율": st.column_config.TextColumn("적용환율", width="medium"),
                 "매수금액": st.column_config.TextColumn("매수금액", width="medium"),
             },
@@ -4507,11 +4567,12 @@ def render_compact_trading_dashboard():
 
         save_c1, save_c2 = st.columns([1, 1])
         if save_c1.button(
-            "💾 보유수량 변경 저장",
+            "💾 실제 수량·체결가 저장",
             use_container_width=True,
             key="save_v9_open_qty_inline",
         ):
             merged_map = dict(st.session_state.get("v9_quantity_overrides", {}))
+            merged_price_map = dict(st.session_state.get("v9_entry_price_overrides", {}))
             key_by_slot = {
                 i: v9_position_key(pos)
                 for i, pos in enumerate(v9_open_positions or [], start=1)
@@ -4521,18 +4582,25 @@ def render_compact_trading_dashboard():
                 key = key_by_slot.get(slot_no)
                 if key:
                     merged_map[key] = max(1, int(round(float(row["보유수량"]))))
+                    actual_entry = float(row["매수가"])
+                    if actual_entry <= 0:
+                        st.error("실제 매수체결가는 0보다 커야 합니다.")
+                        st.stop()
+                    merged_price_map[key] = round(actual_entry, 6)
             st.session_state["v9_quantity_overrides"] = merged_map
-            ok, msg = save_persisted_v9_quantities(merged_map)
+            st.session_state["v9_entry_price_overrides"] = merged_price_map
+            ok, msg = save_persisted_v9_open_position_overrides(merged_map, merged_price_map)
             st.session_state["v9_quantity_persistence_status"] = msg
             st.session_state["v9_quantity_persistence_ok"] = ok
             st.rerun()
 
         if save_c2.button(
-            "↩️ 현재 슬롯 전략 기준수량으로 복원",
+            "↩️ 현재 슬롯 전략값으로 복원",
             use_container_width=True,
             key="reset_v9_open_qty_inline",
         ):
             merged_map = dict(st.session_state.get("v9_quantity_overrides", {}))
+            merged_price_map = dict(st.session_state.get("v9_entry_price_overrides", {}))
             for pos in v9_open_positions or []:
                 key = v9_position_key(pos)
                 entry_date = pd.Timestamp(pos["entry_date"]).normalize()
@@ -4541,8 +4609,10 @@ def render_compact_trading_dashboard():
                 entry_fx = lookup_entry_fx(entry_date, v9_fx_daily, portfolio_fallback_fx)
                 if entry_fx is not None and entry_fx > 0 and entry_price > 0:
                     merged_map[key] = max(1, int(round(invested / (entry_price * entry_fx))))
+                merged_price_map.pop(key, None)
             st.session_state["v9_quantity_overrides"] = merged_map
-            ok, msg = save_persisted_v9_quantities(merged_map)
+            st.session_state["v9_entry_price_overrides"] = merged_price_map
+            ok, msg = save_persisted_v9_open_position_overrides(merged_map, merged_price_map)
             st.session_state["v9_quantity_persistence_status"] = msg
             st.session_state["v9_quantity_persistence_ok"] = ok
             st.rerun()
@@ -4552,7 +4622,7 @@ def render_compact_trading_dashboard():
             if st.session_state.get("v9_quantity_persistence_ok") is False:
                 st.error(f"☁️ 영구저장 오류 · {persistence_msg}")
             else:
-                st.caption(f"🔐 실제 보유수량 영구저장 연결됨 · {persistence_msg or 'GitHub 암호화 저장소 사용'}")
+                st.caption(f"🔐 실제 보유수량·매수체결가 영구저장 연결됨 · {persistence_msg or 'GitHub 암호화 저장소 사용'}")
         else:
             st.warning(
                 "현재는 세션 저장만 사용 중입니다. Streamlit Secrets의 GitHub/암호화 설정을 확인하세요."
@@ -4567,7 +4637,7 @@ def render_compact_trading_dashboard():
     if strategy_mode.startswith(("V9", "V10")):
         st.caption(
             f"현재가·수익률·평가손익은 {'장중 참고시세' if snapshot['is_live'] else '마지막 확정 종가'} 기준입니다. · "
-            f"보유수량은 매수금액 ÷ (매수가 × 매수일 USD/KRW 참고환율)로 계산한 예상수량을 정수로 반올림해 표시합니다. · "
+            f"실제 보유수량과 실제 매수체결가는 표에서 직접 수정할 수 있으며, 저장값은 매수금액·현재 수익률·평가손익·LOC 주문가·실전 NAV 계산에 반영됩니다. · "
             f"목표 매도가는 직전 확정 일봉의 단기하락추세 상태를 반영합니다. · "
             f"V10 선택 시 급락일에 생성된 추가 슬롯은 '급락 LOC (-9%)'로 구분되어 다음 확정 일봉 업데이트 후 자동 표시됩니다. · "
             f"MOC 예정일은 매수일 Day 0 이후 {BASE_HOLDING_DAYS}번째 미국 거래일입니다."
