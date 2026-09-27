@@ -18,7 +18,23 @@ CRASH_THRESHOLD = -0.09
 CRASH_LOC_MULTIPLIER = 0.91
 
 
-def run_v10_backtest(raw_df, initial_capital=INITIAL_CAPITAL, start_date=None, end_date=None):
+def run_v10_backtest(
+    raw_df,
+    initial_capital=INITIAL_CAPITAL,
+    start_date=None,
+    end_date=None,
+    crash_threshold=CRASH_THRESHOLD,
+    position_divisor=POSITION_DIVISOR,
+    max_positions=MAX_POSITIONS,
+    target_return=TARGET_RETURN,
+    tb3_loc_plus_dollar=TB3_LOC_PLUS_DOLLAR,
+    holding_days_limit=HOLDING_DAYS,
+    reserve_ratio=RESERVE_RATIO,
+    enable_risk_b=True,
+    enable_tb3=True,
+    enable_crash_buy=True,
+    crash_extra_slots=1,
+):
     """V10 = V9 + same-day crash LOC extra slot.
 
     - Base buy: previous NAV / 7 at the day's Close.
@@ -28,6 +44,16 @@ def run_v10_backtest(raw_df, initial_capital=INITIAL_CAPITAL, start_date=None, e
     - Maximum 7 open slots; same-day sale proceeds cannot fund same-day buys.
     - Existing V9 TB3 dynamic LOC and TIME 7 rules are unchanged.
     """
+    crash_threshold = float(crash_threshold)
+    crash_loc_multiplier = 1.0 + crash_threshold
+    position_divisor = max(1, int(position_divisor))
+    max_positions = max(1, int(max_positions))
+    target_return = float(target_return)
+    tb3_loc_plus_dollar = float(tb3_loc_plus_dollar)
+    holding_days_limit = max(1, int(holding_days_limit))
+    reserve_ratio = min(max(float(reserve_ratio), 0.0), 0.95)
+    crash_extra_slots = max(0, int(crash_extra_slots))
+
     df = add_v9_signals(raw_df)
     df["Prev_Close"] = df["Close"].shift(1)
 
@@ -61,9 +87,14 @@ def run_v10_backtest(raw_df, initial_capital=INITIAL_CAPITAL, start_date=None, e
 
         ma_gap = row["Signal_MA200_Gap"]
         momentum = row["Signal_Momentum_20D"]
-        risk_state = is_risk_b(ma_gap, momentum)
-        tb3_state = bool(row["TB3_State"])
-        crash_state = bool(pd.notna(prev_close) and close_price <= prev_close * CRASH_LOC_MULTIPLIER)
+        risk_state = bool(enable_risk_b and is_risk_b(ma_gap, momentum))
+        tb3_state = bool(enable_tb3 and row["TB3_State"])
+        crash_state = bool(
+            enable_crash_buy
+            and crash_extra_slots > 0
+            and pd.notna(prev_close)
+            and close_price <= prev_close * crash_loc_multiplier
+        )
 
         if risk_state:
             risk_days += 1
@@ -78,9 +109,9 @@ def run_v10_backtest(raw_df, initial_capital=INITIAL_CAPITAL, start_date=None, e
             entry_price = float(position["entry_price"])
             shares = float(position["shares"])
             invested = float(position["invested"])
-            normal_target = entry_price * (1 + TARGET_RETURN)
+            normal_target = entry_price * (1 + target_return)
             if tb3_state:
-                active_target = entry_price + TB3_LOC_PLUS_DOLLAR
+                active_target = entry_price + tb3_loc_plus_dollar
                 target_mode = "TB3_DYN_LOC"
             else:
                 active_target = normal_target
@@ -89,7 +120,7 @@ def run_v10_backtest(raw_df, initial_capital=INITIAL_CAPITAL, start_date=None, e
             exit_type = None
             if close_price >= active_target:
                 exit_type = target_mode
-            elif holding_days >= HOLDING_DAYS:
+            elif holding_days >= holding_days_limit:
                 exit_type = "TIME"
 
             if exit_type is None:
@@ -120,27 +151,27 @@ def run_v10_backtest(raw_df, initial_capital=INITIAL_CAPITAL, start_date=None, e
             })
         positions = remaining_positions
 
-        target_buy_amount = previous_nav / POSITION_DIVISOR
-        reserve_amount = previous_nav * RESERVE_RATIO
+        target_buy_amount = previous_nav / position_divisor
+        reserve_amount = previous_nav * reserve_ratio
         available_cash = max(0.0, cash_before_sales - reserve_amount)
         total_buy_amount = 0.0
         buys_today = 0
         crash_extra_bought = False
 
-        if len(positions) < MAX_POSITIONS:
+        if len(positions) < max_positions:
             if risk_state:
                 risk_skip_days += 1
             else:
-                desired_buys = 2 if crash_state else 1
+                desired_buys = 1 + crash_extra_slots if crash_state else 1
                 for buy_index in range(desired_buys):
-                    if len(positions) >= MAX_POSITIONS or available_cash <= 0 or target_buy_amount <= 0:
+                    if len(positions) >= max_positions or available_cash <= 0 or target_buy_amount <= 0:
                         break
                     buy_amount = min(target_buy_amount, available_cash)
                     if buy_amount <= 0:
                         break
                     shares = buy_amount / close_price
                     position_seq += 1
-                    buy_type = "급락 LOC (-9%)" if buy_index == 1 else "기본 MOC"
+                    buy_type = (f"급락 LOC ({crash_threshold:.1%})" if buy_index >= 1 else "기본 MOC")
                     positions.append({
                         "position_id": f"{date.date().isoformat()}-{position_seq:06d}",
                         "buy_type": buy_type,
@@ -156,7 +187,7 @@ def run_v10_backtest(raw_df, initial_capital=INITIAL_CAPITAL, start_date=None, e
                     available_cash -= buy_amount
                     total_buy_amount += buy_amount
                     buys_today += 1
-                    if buy_index == 1:
+                    if buy_index >= 1:
                         crash_extra_bought = True
                 if buys_today > 0:
                     normal_buy_days += 1
@@ -189,7 +220,7 @@ def run_v10_backtest(raw_df, initial_capital=INITIAL_CAPITAL, start_date=None, e
             "TB3_State": tb3_state,
             "Crash_State": crash_state,
             "Prev_Close": prev_close,
-            "Crash_LOC_Price": prev_close * CRASH_LOC_MULTIPLIER if pd.notna(prev_close) else np.nan,
+            "Crash_LOC_Price": prev_close * crash_loc_multiplier if pd.notna(prev_close) else np.nan,
             "Target_Buy_Amount": target_buy_amount,
             "Actual_Buy_Amount": total_buy_amount,
             "Buy_Slots": buys_today,
@@ -214,7 +245,16 @@ def run_v10_backtest(raw_df, initial_capital=INITIAL_CAPITAL, start_date=None, e
         "crash_signal_days": int(crash_signal_days),
         "crash_extra_buy_days": int(crash_extra_buy_days),
         "crash_slots_bought": int(crash_slots_bought),
-        "crash_threshold": float(CRASH_THRESHOLD),
+        "crash_threshold": float(crash_threshold),
+        "position_divisor": int(position_divisor),
+        "max_positions_limit": int(max_positions),
+        "target_return": float(target_return),
+        "holding_days_limit": int(holding_days_limit),
+        "reserve_ratio": float(reserve_ratio),
+        "enable_risk_b": bool(enable_risk_b),
+        "enable_tb3": bool(enable_tb3),
+        "enable_crash_buy": bool(enable_crash_buy),
+        "crash_extra_slots": int(crash_extra_slots),
     })
     return {
         "stats": stats,

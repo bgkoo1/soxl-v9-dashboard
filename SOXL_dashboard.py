@@ -147,11 +147,10 @@ st.markdown(
 # TITLE
 # ============================================================
 
-st.title("📈 SOXL Quant Strategy Lab(퀀트 전략 대시보드)")
+st.title("📈 SOXL Quant Dashboard")
 
 st.caption(
-    "최종 V10 = V9 + 급락 추가매수 LOC · "
-    "장기과매도 약세필터와 TB3 방어 LOC를 유지하면서, 종가가 전일 대비 -9% 이하이면 같은 종가에 추가 1슬롯을 매수합니다."
+    "실전 운용과 백테스트 Lab을 분리했습니다. 백테스트 Lab의 설정 변경은 실제 투자 데이터에 반영되지 않습니다."
 )
 
 
@@ -2957,11 +2956,333 @@ BASE_RESERVE_RATIO = 0.0
 
 
 # ============================================================
+# APP MODE / BACKTEST LAB
+# ============================================================
+
+def _lab_safe_stat(stats, key, default=float("nan")):
+    value = stats.get(key, default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _lab_pf_text(value):
+    try:
+        if value == float("inf"):
+            return "∞"
+        if pd.isna(value):
+            return "-"
+        return f"{float(value):.2f}"
+    except Exception:
+        return "-"
+
+
+def _lab_build_result(full_price_df, start_value, end_value, capital, strategy_name, custom_params=None):
+    """Pure backtest helper. Never reads or writes live_portfolio.enc."""
+    custom_params = custom_params or {}
+    start_ts = pd.Timestamp(start_value)
+    end_ts = pd.Timestamp(end_value)
+    selected_df = full_price_df[
+        (full_price_df["Date"] >= start_ts) & (full_price_df["Date"] <= end_ts)
+    ].copy().reset_index(drop=True)
+    if selected_df.empty:
+        raise ValueError("선택한 기간에 데이터가 없습니다.")
+
+    if strategy_name.startswith("V10"):
+        raw = run_v10_backtest(
+            raw_df=full_price_df,
+            initial_capital=capital,
+            start_date=start_value,
+            end_date=end_value,
+        )
+        return add_result_tables(raw, capital)
+
+    if strategy_name.startswith("V9"):
+        raw = run_v9_backtest(
+            raw_df=full_price_df,
+            initial_capital=capital,
+            start_date=start_value,
+            end_date=end_value,
+        )
+        return add_result_tables(raw, capital)
+
+    if strategy_name.startswith("V8"):
+        raw = run_risk_divisor_backtest(
+            raw_df=selected_df,
+            risk_divisor=None,
+            initial_capital=capital,
+        )
+        return add_result_tables(raw, capital)
+
+    if strategy_name.startswith("V7"):
+        raw = run_backtest(
+            df=selected_df,
+            initial_capital=capital,
+            position_divisor=BASE_POSITION_DIVISOR,
+            max_positions=BASE_MAX_POSITIONS,
+            target_return=BASE_TARGET_RETURN,
+            holding_days=BASE_HOLDING_DAYS,
+            reserve_ratio=BASE_RESERVE_RATIO,
+        )
+        return add_result_tables(raw, capital)
+
+    # Custom Lab: V10 엔진을 범용화해 V7~V10 계열 규칙을 독립적으로 실험합니다.
+    raw = run_v10_backtest(
+        raw_df=full_price_df,
+        initial_capital=capital,
+        start_date=start_value,
+        end_date=end_value,
+        crash_threshold=-float(custom_params.get("crash_pct", 9.0)) / 100.0,
+        position_divisor=int(custom_params.get("position_divisor", 7)),
+        max_positions=int(custom_params.get("max_positions", 7)),
+        target_return=float(custom_params.get("target_pct", 2.7)) / 100.0,
+        tb3_loc_plus_dollar=float(custom_params.get("tb3_plus", 0.10)),
+        holding_days_limit=int(custom_params.get("holding_days", 7)),
+        reserve_ratio=float(custom_params.get("reserve_pct", 0.0)) / 100.0,
+        enable_risk_b=bool(custom_params.get("enable_risk_b", True)),
+        enable_tb3=bool(custom_params.get("enable_tb3", True)),
+        enable_crash_buy=bool(custom_params.get("enable_crash_buy", True)),
+        crash_extra_slots=int(custom_params.get("crash_extra_slots", 1)),
+    )
+    return add_result_tables(raw, capital)
+
+
+def render_backtest_lab(full_price_df):
+    st.subheader("🧪 Backtest Lab(백테스트 전용)")
+    st.info(
+        "이 페이지는 SOXL 시장 데이터와 전략 엔진만 사용합니다. "
+        "실제 보유수량·실제 체결가·입출금·수동거래·live_portfolio.enc는 읽거나 수정하지 않습니다."
+    )
+
+    min_d = pd.Timestamp(full_price_df["Date"].min()).date()
+    max_d = pd.Timestamp(full_price_df["Date"].max()).date()
+    default_start = max(min_d, date(2022, 1, 1))
+
+    st.sidebar.header("🧪 Backtest Lab")
+    strategy_name = st.sidebar.selectbox(
+        "전략",
+        [
+            "V10 Final(-9% 급락 추가매수)",
+            "V9 Final(약세필터 + TB3 방어LOC)",
+            "V8 장기과매도 약세필터",
+            "V7 Base(기본 7분할)",
+            "Custom Lab(직접 설정)",
+        ],
+        key="lab_strategy",
+    )
+    lab_initial_capital = st.sidebar.number_input(
+        "가상 초기 투자금 (원)",
+        min_value=1_000_000,
+        max_value=10_000_000_000,
+        value=100_000_000,
+        step=10_000_000,
+        key="lab_capital",
+    )
+    lab_start = st.sidebar.date_input(
+        "백테스트 시작일",
+        value=default_start,
+        min_value=min_d,
+        max_value=max_d,
+        key="lab_start_date",
+    )
+    lab_end = st.sidebar.date_input(
+        "백테스트 종료일",
+        value=max_d,
+        min_value=min_d,
+        max_value=max_d,
+        key="lab_end_date",
+    )
+
+    custom = {}
+    if strategy_name.startswith("Custom"):
+        st.sidebar.divider()
+        st.sidebar.caption("Custom 설정은 실전 운용 설정과 완전히 분리됩니다.")
+        custom["position_divisor"] = st.sidebar.slider("분할 수", 2, 20, 7, key="lab_divisor")
+        custom["max_positions"] = st.sidebar.slider("최대 동시 보유 슬롯", 1, 20, 7, key="lab_max_positions")
+        custom["target_pct"] = st.sidebar.slider("일반 LOC 목표수익률 (%)", 0.1, 15.0, 2.7, 0.1, key="lab_target_pct")
+        custom["holding_days"] = st.sidebar.slider("TIME 보유기간 (거래일)", 1, 30, 7, key="lab_holding_days")
+        custom["reserve_pct"] = st.sidebar.slider("현금 보유비율 (%)", 0.0, 50.0, 0.0, 1.0, key="lab_reserve_pct")
+        custom["enable_risk_b"] = st.sidebar.checkbox("장기과매도 약세필터(Risk B)", True, key="lab_risk_b")
+        custom["enable_tb3"] = st.sidebar.checkbox("TB3 방어 LOC", True, key="lab_tb3")
+        if custom["enable_tb3"]:
+            custom["tb3_plus"] = st.sidebar.number_input("TB3 LOC = 매수가 + $", 0.01, 5.00, 0.10, 0.01, key="lab_tb3_plus")
+        else:
+            custom["tb3_plus"] = 0.10
+        custom["enable_crash_buy"] = st.sidebar.checkbox("급락 추가매수", True, key="lab_crash_enable")
+        if custom["enable_crash_buy"]:
+            custom["crash_pct"] = st.sidebar.slider("급락 LOC 기준 (%)", 5.0, 20.0, 9.0, 0.5, key="lab_crash_pct")
+            custom["crash_extra_slots"] = st.sidebar.slider("급락 시 추가 슬롯 수", 1, 3, 1, key="lab_crash_slots")
+        else:
+            custom["crash_pct"] = 9.0
+            custom["crash_extra_slots"] = 0
+
+    if lab_start > lab_end:
+        st.error("백테스트 시작일이 종료일보다 늦습니다.")
+        return
+
+    comparison_options = [
+        "비교 안 함",
+        "V10 Final(-9% 급락 추가매수)",
+        "V9 Final(약세필터 + TB3 방어LOC)",
+        "V8 장기과매도 약세필터",
+        "V7 Base(기본 7분할)",
+    ]
+    comparison_name = st.sidebar.selectbox("비교 전략 (선택)", comparison_options, key="lab_compare")
+
+    with st.spinner("백테스트 계산 중..."):
+        result = _lab_build_result(
+            full_price_df, lab_start, lab_end, float(lab_initial_capital), strategy_name, custom
+        )
+        comparison_result = None
+        if comparison_name != "비교 안 함" and comparison_name != strategy_name:
+            comparison_result = _lab_build_result(
+                full_price_df, lab_start, lab_end, float(lab_initial_capital), comparison_name, {}
+            )
+
+    stats = result.get("stats", {})
+    final_equity = _lab_safe_stat(stats, "final_equity")
+    cagr = _lab_safe_stat(stats, "cagr")
+    mdd = _lab_safe_stat(stats, "mdd")
+    calmar = _lab_safe_stat(stats, "calmar")
+    pf = stats.get("profit_factor", float("nan"))
+    win_rate = _lab_safe_stat(stats, "win_rate")
+    total_trades = int(stats.get("total_trades", len(result.get("trades", []))) or 0)
+    avg_holding = _lab_safe_stat(stats, "avg_holding_days")
+
+    st.markdown(f"### {strategy_name}")
+    st.caption(f"검증기간 {lab_start} ~ {lab_end} · 초기자금 {lab_initial_capital:,.0f}원")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("최종자산", f"{final_equity:,.0f}원" if pd.notna(final_equity) else "-")
+    c2.metric("연평균 복리수익률(CAGR)", f"{cagr:.2%}" if pd.notna(cagr) else "-")
+    c3.metric("최대 낙폭(MDD)", f"{mdd:.2%}" if pd.notna(mdd) else "-")
+    c4.metric("수익·낙폭 효율(Calmar)", f"{calmar:.2f}" if pd.notna(calmar) else "-")
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("손익 효율(PF)", _lab_pf_text(pf))
+    c6.metric("승률", f"{win_rate:.2%}" if pd.notna(win_rate) else "-")
+    c7.metric("총 거래 수", f"{total_trades:,}")
+    c8.metric("평균 보유기간", f"{avg_holding:.2f}일" if pd.notna(avg_holding) else "-")
+
+    equity = result.get("equity", pd.DataFrame()).copy()
+    if not equity.empty:
+        equity["Date"] = pd.to_datetime(equity["Date"])
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=equity["Date"], y=equity["Equity"], mode="lines", name=strategy_name))
+        if comparison_result is not None:
+            ce = comparison_result.get("equity", pd.DataFrame()).copy()
+            if not ce.empty:
+                ce["Date"] = pd.to_datetime(ce["Date"])
+                fig.add_trace(go.Scatter(x=ce["Date"], y=ce["Equity"], mode="lines", name=comparison_name))
+        fig.update_layout(
+            title="자산곡선",
+            xaxis_title="날짜",
+            yaxis_title="자산 (원)",
+            hovermode="x unified",
+            legend_title_text="전략",
+            margin=dict(l=10, r=10, t=55, b=10),
+            height=430,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    drawdown = result.get("drawdown", pd.DataFrame()).copy()
+    if not drawdown.empty:
+        drawdown["Date"] = pd.to_datetime(drawdown["Date"])
+        dd_fig = go.Figure()
+        dd_fig.add_trace(go.Scatter(
+            x=drawdown["Date"], y=drawdown["Drawdown"] * 100,
+            mode="lines", name="Drawdown"
+        ))
+        dd_fig.update_layout(
+            title="Drawdown",
+            xaxis_title="날짜",
+            yaxis_title="낙폭 (%)",
+            hovermode="x unified",
+            margin=dict(l=10, r=10, t=55, b=10),
+            height=300,
+        )
+        st.plotly_chart(dd_fig, use_container_width=True)
+
+    tab_year, tab_trade, tab_setting = st.tabs(["📅 연도별", "🧾 거래내역", "⚙️ 실행조건"])
+    with tab_year:
+        yearly = result.get("yearly", pd.DataFrame()).copy()
+        if yearly.empty:
+            st.caption("연도별 데이터가 없습니다.")
+        else:
+            display = yearly.copy()
+            if "Year_Return" in display.columns:
+                display["연 수익률"] = display["Year_Return"].map(lambda x: f"{x:.2%}")
+            if "Year_MDD" in display.columns:
+                display["연중 최대 낙폭"] = display["Year_MDD"].map(lambda x: f"{x:.2%}")
+            if "Year_End_Equity" in display.columns:
+                display["연말 자산"] = display["Year_End_Equity"].map(lambda x: f"{x:,.0f}원")
+            keep = [c for c in ["Year", "연 수익률", "연중 최대 낙폭", "연말 자산"] if c in display.columns]
+            display = display[keep].rename(columns={"Year": "연도"})
+            st.dataframe(display, use_container_width=True, hide_index=True)
+
+    with tab_trade:
+        trades = result.get("trades", pd.DataFrame()).copy()
+        if trades.empty:
+            st.caption("거래내역이 없습니다.")
+        else:
+            show_cols = [c for c in [
+                "Position_ID", "Buy_Type", "Entry_Date", "Exit_Date", "Entry_Price", "Exit_Price",
+                "Return", "Profit", "Holding_Days", "Exit_Type"
+            ] if c in trades.columns]
+            trade_display = trades[show_cols].copy()
+            for c in ["Entry_Date", "Exit_Date"]:
+                if c in trade_display.columns:
+                    trade_display[c] = pd.to_datetime(trade_display[c]).dt.date
+            if "Return" in trade_display.columns:
+                trade_display["Return"] = trade_display["Return"].map(lambda x: f"{x:.2%}")
+            st.dataframe(trade_display, use_container_width=True, hide_index=True, height=460)
+            st.download_button(
+                "⬇️ 거래내역 CSV 다운로드",
+                data=trades.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"SOXL_backtest_{lab_start}_{lab_end}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+    with tab_setting:
+        settings_rows = [
+            {"항목": "페이지", "값": "백테스트 Lab (실전 데이터와 분리)"},
+            {"항목": "전략", "값": strategy_name},
+            {"항목": "기간", "값": f"{lab_start} ~ {lab_end}"},
+            {"항목": "가상 초기자금", "값": f"{lab_initial_capital:,.0f}원"},
+        ]
+        if strategy_name.startswith("Custom"):
+            settings_rows.extend([
+                {"항목": "분할 수", "값": custom["position_divisor"]},
+                {"항목": "최대 슬롯", "값": custom["max_positions"]},
+                {"항목": "LOC 목표", "값": f"+{custom['target_pct']:.1f}%"},
+                {"항목": "TIME", "값": f"{custom['holding_days']}거래일"},
+                {"항목": "Risk B", "값": "ON" if custom["enable_risk_b"] else "OFF"},
+                {"항목": "TB3", "값": "ON" if custom["enable_tb3"] else "OFF"},
+                {"항목": "급락 추가매수", "값": (f"-{custom['crash_pct']:.1f}% / +{custom['crash_extra_slots']}슬롯" if custom["enable_crash_buy"] else "OFF")},
+            ])
+        st.dataframe(pd.DataFrame(settings_rows), use_container_width=True, hide_index=True)
+
+
+app_page = st.radio(
+    "화면 선택",
+    ["📈 실전 운용", "🧪 백테스트 Lab"],
+    horizontal=True,
+    label_visibility="collapsed",
+    key="app_page_mode",
+)
+
+if app_page == "🧪 백테스트 Lab":
+    render_backtest_lab(full_df)
+    st.stop()
+
+
+# ============================================================
 # SIDEBAR
 # ============================================================
 
 st.sidebar.header(
-    "📊 SOXL Strategy Lab(전략 실험실)"
+    "📈 실전 운용"
 )
 
 
