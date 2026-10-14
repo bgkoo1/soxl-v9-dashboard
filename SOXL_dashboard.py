@@ -668,6 +668,20 @@ def _sanitize_v9_manual_trades(items):
     return cleaned
 
 
+def _sanitize_v9_excluded_positions(items):
+    """실제로 매수하지 않은 전략 슬롯 키를 안전한 목록으로 정리합니다."""
+    if not isinstance(items, (list, tuple, set)):
+        return []
+    cleaned = []
+    seen = set()
+    for item in items:
+        key = str(item).strip()
+        if key and key not in seen:
+            cleaned.append(key)
+            seen.add(key)
+    return cleaned
+
+
 def _sanitize_v9_entry_prices(items):
     """현재 보유 슬롯의 실제 매수체결가 오버라이드를 안전한 형식으로 정리합니다."""
     cleaned = {}
@@ -686,7 +700,7 @@ def _sanitize_v9_entry_prices(items):
 def _load_persisted_v9_state():
     """GitHub 암호화 파일에서 설정 + 실제수량 + 입출금 + 실제 거래값을 함께 복원합니다."""
     config = _portfolio_persistence_config()
-    empty = {"settings": _sanitize_dashboard_settings({}), "quantities": {}, "entry_prices": {}, "cashflows": [], "trade_overrides": {}, "manual_trades": []}
+    empty = {"settings": _sanitize_dashboard_settings({}), "quantities": {}, "entry_prices": {}, "excluded_positions": [], "cashflows": [], "trade_overrides": {}, "manual_trades": []}
     if config is None:
         return empty, "Secrets 미설정"
 
@@ -713,11 +727,12 @@ def _load_persisted_v9_state():
         cleaned_qty = {}
         for k, v in quantities.items():
             try:
-                cleaned_qty[str(k)] = max(1, int(round(float(v))))
+                cleaned_qty[str(k)] = max(0, int(round(float(v))))
             except (TypeError, ValueError):
                 continue
 
         entry_prices = _sanitize_v9_entry_prices(payload.get("entry_prices", {}))
+        excluded_positions = _sanitize_v9_excluded_positions(payload.get("excluded_positions", []))
         settings = _sanitize_dashboard_settings(payload.get("settings", {}))
         cashflows = _sanitize_v9_cashflows(payload.get("cashflows", []))
         trade_overrides = _sanitize_v9_trade_overrides(payload.get("trade_overrides", {}))
@@ -726,6 +741,7 @@ def _load_persisted_v9_state():
             "settings": settings,
             "quantities": cleaned_qty,
             "entry_prices": entry_prices,
+            "excluded_positions": excluded_positions,
             "cashflows": cashflows,
             "trade_overrides": trade_overrides,
             "manual_trades": manual_trades,
@@ -736,7 +752,7 @@ def _load_persisted_v9_state():
         return empty, f"영구 저장 불러오기 실패: {e}"
 
 
-def _save_persisted_v9_state(quantity_map=None, entry_prices=None, cashflows=None, trade_overrides=None, settings=None, manual_trades=None):
+def _save_persisted_v9_state(quantity_map=None, entry_prices=None, cashflows=None, trade_overrides=None, settings=None, manual_trades=None, excluded_positions=None):
     """실제수량·입출금·실제 체결값을 하나의 암호화 파일로 저장합니다."""
     config = _portfolio_persistence_config()
     if config is None:
@@ -745,21 +761,25 @@ def _save_persisted_v9_state(quantity_map=None, entry_prices=None, cashflows=Non
     cleaned_qty = {}
     for k, v in (quantity_map or {}).items():
         try:
-            cleaned_qty[str(k)] = max(1, int(round(float(v))))
+            cleaned_qty[str(k)] = max(0, int(round(float(v))))
         except (TypeError, ValueError):
             continue
     cleaned_entry_prices = _sanitize_v9_entry_prices(entry_prices)
+    cleaned_excluded_positions = _sanitize_v9_excluded_positions(
+        st.session_state.get("v9_excluded_positions", []) if excluded_positions is None else excluded_positions
+    )
     cleaned_cashflows = _sanitize_v9_cashflows(cashflows)
     cleaned_trade_overrides = _sanitize_v9_trade_overrides(trade_overrides)
     cleaned_settings = _sanitize_dashboard_settings(settings or {})
     cleaned_manual_trades = _sanitize_v9_manual_trades(manual_trades)
 
     payload = {
-        "version": 5,
+        "version": 6,
         "updated_at": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(),
         "settings": cleaned_settings,
         "quantities": cleaned_qty,
         "entry_prices": cleaned_entry_prices,
+        "excluded_positions": cleaned_excluded_positions,
         "cashflows": cleaned_cashflows,
         "trade_overrides": cleaned_trade_overrides,
         "manual_trades": cleaned_manual_trades,
@@ -812,7 +832,7 @@ def _save_persisted_v9_state(quantity_map=None, entry_prices=None, cashflows=Non
                 timeout=15,
             )
         response.raise_for_status()
-        return True, "운용설정·실제 보유수량·입출금·실제 거래값을 암호화하여 영구 저장했습니다."
+        return True, "운용설정·실제 보유수량·미매수 슬롯·입출금·실제 거래값을 암호화하여 영구 저장했습니다."
     except Exception as e:
         return False, f"영구 저장 실패: {e}"
 
@@ -822,6 +842,7 @@ def load_persisted_v9_quantities():
     state, status = _load_persisted_v9_state()
     st.session_state["v9_settings"] = state.get("settings", {})
     st.session_state["v9_entry_price_overrides"] = state.get("entry_prices", {})
+    st.session_state["v9_excluded_positions"] = state.get("excluded_positions", [])
     st.session_state["v9_cashflows"] = state.get("cashflows", [])
     st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
     st.session_state["v9_manual_trades"] = state.get("manual_trades", [])
@@ -834,6 +855,7 @@ def load_persisted_v9_cashflows():
     st.session_state["v9_settings"] = state.get("settings", {})
     st.session_state["v9_quantity_overrides"] = state.get("quantities", {})
     st.session_state["v9_entry_price_overrides"] = state.get("entry_prices", {})
+    st.session_state["v9_excluded_positions"] = state.get("excluded_positions", [])
     st.session_state["v9_cashflows"] = state.get("cashflows", [])
     st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
     st.session_state["v9_manual_trades"] = state.get("manual_trades", [])
@@ -872,6 +894,7 @@ def load_persisted_v9_trade_overrides():
     st.session_state["v9_settings"] = state.get("settings", {})
     st.session_state["v9_quantity_overrides"] = state.get("quantities", {})
     st.session_state["v9_entry_price_overrides"] = state.get("entry_prices", {})
+    st.session_state["v9_excluded_positions"] = state.get("excluded_positions", [])
     st.session_state["v9_cashflows"] = state.get("cashflows", [])
     st.session_state["v9_trade_overrides"] = state.get("trade_overrides", {})
     st.session_state["v9_manual_trades"] = state.get("manual_trades", [])
@@ -921,10 +944,12 @@ def save_persisted_v9_manual_trades(manual_trades):
     )
 
 
-def save_persisted_v9_open_position_overrides(quantity_map, entry_price_map):
+def save_persisted_v9_open_position_overrides(quantity_map, entry_price_map, excluded_positions=None):
     """현재 슬롯의 실제 보유수량과 실제 매수체결가를 함께 영구 저장합니다."""
     st.session_state["v9_quantity_overrides"] = dict(quantity_map or {})
     st.session_state["v9_entry_price_overrides"] = _sanitize_v9_entry_prices(entry_price_map or {})
+    if excluded_positions is not None:
+        st.session_state["v9_excluded_positions"] = _sanitize_v9_excluded_positions(excluded_positions)
     return _save_persisted_v9_state(
         quantity_map=st.session_state["v9_quantity_overrides"],
         entry_prices=st.session_state["v9_entry_price_overrides"],
@@ -932,6 +957,7 @@ def save_persisted_v9_open_position_overrides(quantity_map, entry_price_map):
         trade_overrides=st.session_state.get("v9_trade_overrides", {}),
         settings=st.session_state.get("v9_settings", {}),
         manual_trades=st.session_state.get("v9_manual_trades", []),
+        excluded_positions=st.session_state.get("v9_excluded_positions", []),
     )
 
 
@@ -1421,6 +1447,7 @@ def build_open_positions_table(trades_df, current_close, as_of_date, holding_day
             status = "TARGET(목표수익 매도) 대기"
 
         rows.append({
+            "_key": key,
             "슬롯": slot_no,
             "매수유형": str(pos.get("buy_type", "기본 MOC")),
             "매수일": entry_date.date(),
@@ -1481,7 +1508,7 @@ def get_v9_quantity_overrides(open_positions, fx_daily=None, fallback_fx=None):
         )
         saved_qty = merged.get(key, strategy_qty)
         try:
-            saved_qty = max(1, int(round(float(saved_qty))))
+            saved_qty = max(0, int(round(float(saved_qty))))
         except (TypeError, ValueError):
             saved_qty = max(1, strategy_qty)
         merged[key] = saved_qty
@@ -1496,6 +1523,7 @@ def calculate_v9_actual_portfolio(
     confirmed_close,
     qty_overrides,
     entry_price_overrides=None,
+    excluded_positions=None,
     fx_daily=None,
     fallback_fx=None,
 ):
@@ -1506,9 +1534,21 @@ def calculate_v9_actual_portfolio(
     adjusted_cash = float(model_cash)
     confirmed_position_value = 0.0
     rows = []
+    excluded = set(_sanitize_v9_excluded_positions(excluded_positions or []))
 
     for pos in open_positions or []:
         key = v9_position_key(pos)
+        if key in excluded:
+            # 전략상 슬롯은 유지하되 실전 포트폴리오에서는 미매수(0주)로 처리합니다.
+            entry_date = pd.Timestamp(pos["entry_date"]).normalize()
+            model_invested = float(pos["invested"])
+            adjusted_cash += model_invested
+            rows.append({
+                "Key": key, "Entry_Date": entry_date, "Entry_Price": float(pos["entry_price"]),
+                "Entry_FX": lookup_entry_fx(entry_date, fx_daily, fallback_fx),
+                "Model_Invested": model_invested, "Actual_Qty": 0, "Actual_Invested": 0.0, "Confirmed_Value": 0.0,
+            })
+            continue
         entry_date = pd.Timestamp(pos["entry_date"]).normalize()
         strategy_entry_price = float(pos["entry_price"])
         key = v9_position_key(pos)
@@ -1521,7 +1561,7 @@ def calculate_v9_actual_portfolio(
             actual_invested = model_invested
         else:
             strategy_qty = int(round(model_invested / (strategy_entry_price * entry_fx)))
-            actual_qty = int(qty_overrides.get(key, max(1, strategy_qty)))
+            actual_qty = max(0, int(qty_overrides.get(key, max(1, strategy_qty))))
             actual_invested = actual_qty * entry_price * entry_fx
 
         # 전략 계획금액보다 덜 샀으면 현금이 늘고, 더 샀으면 현금이 줄어듭니다.
@@ -1564,11 +1604,13 @@ def build_v9_actual_trade_records(
     trade_overrides=None,
     fx_daily=None,
     fallback_fx=None,
+    excluded_positions=None,
 ):
     """전략 거래를 기본값으로 두고 저장된 실제 체결값을 덮어쓴 거래표를 만듭니다."""
     qty_overrides = qty_overrides or {}
     trade_overrides = _sanitize_v9_trade_overrides(trade_overrides or {})
     rows = []
+    excluded = set(_sanitize_v9_excluded_positions(excluded_positions or []))
 
     for _, trade in (trades_df if trades_df is not None else pd.DataFrame()).iterrows():
         strategy_entry_date = pd.Timestamp(trade["Entry_Date"]).normalize()
@@ -1582,6 +1624,9 @@ def build_v9_actual_trade_records(
             "position_id": trade.get("Position_ID"),
         })
 
+        if key in excluded:
+            continue
+
         strategy_fx = lookup_entry_fx(strategy_entry_date, fx_daily, fallback_fx)
         strategy_qty = None
         if strategy_fx is not None and strategy_fx > 0 and strategy_entry_price > 0:
@@ -1590,7 +1635,7 @@ def build_v9_actual_trade_records(
         default_qty = strategy_qty
         if key in qty_overrides:
             try:
-                default_qty = max(1, int(round(float(qty_overrides[key]))))
+                default_qty = max(0, int(round(float(qty_overrides[key]))))
             except Exception:
                 pass
         if default_qty is None:
@@ -1612,7 +1657,7 @@ def build_v9_actual_trade_records(
         actual_exit_date = pd.Timestamp(actual["exit_date"]).normalize()
         actual_entry_price = float(actual["entry_price"])
         actual_exit_price = float(actual["exit_price"])
-        actual_qty = max(1, int(round(float(actual["quantity"]))))
+        actual_qty = max(0, int(round(float(actual["quantity"]))))
         actual_fx = lookup_entry_fx(actual_entry_date, fx_daily, fallback_fx)
 
         actual_invested = None
@@ -1718,6 +1763,7 @@ def calculate_v9_realized_execution_adjustment(
     qty_overrides=None,
     fx_daily=None,
     fallback_fx=None,
+    excluded_positions=None,
 ):
     """사용자가 수정·저장한 청산거래만 실전 현금/NAV에 반영할 손익 차이를 계산합니다."""
     cleaned = _sanitize_v9_trade_overrides(trade_overrides or {})
@@ -1730,6 +1776,7 @@ def calculate_v9_realized_execution_adjustment(
         trade_overrides=cleaned,
         fx_daily=fx_daily,
         fallback_fx=fallback_fx,
+        excluded_positions=excluded_positions,
     )
     if actual_records.empty:
         return 0.0
@@ -1779,13 +1826,16 @@ def build_v9_open_positions_table(
     fallback_fx=None,
     qty_overrides=None,
     entry_price_overrides=None,
+    excluded_positions=None,
 ):
     """V9 미청산 포지션을 현재 적용 LOC와 실제 입력수량 기준으로 표시합니다."""
     if not open_positions:
         return pd.DataFrame()
 
     rows = []
-    for slot_no, pos in enumerate(open_positions, start=1):
+    excluded = set(_sanitize_v9_excluded_positions(excluded_positions or []))
+    visible_positions = [p for p in open_positions if v9_position_key(p) not in excluded]
+    for slot_no, pos in enumerate(visible_positions, start=1):
         entry_date = pd.Timestamp(pos["entry_date"]).normalize()
         strategy_entry_price = float(pos["entry_price"])
         key = v9_position_key(pos)
@@ -1828,7 +1878,7 @@ def build_v9_open_positions_table(
             else None
         )
         if strategy_qty is not None:
-            selected_qty = int((qty_overrides or {}).get(key, max(1, strategy_qty)))
+            selected_qty = max(0, int((qty_overrides or {}).get(key, max(1, strategy_qty))))
             actual_invested = selected_qty * entry_price * entry_fx
         else:
             selected_qty = None
@@ -1858,7 +1908,7 @@ def build_v9_open_positions_table(
 
 def build_live_open_holdings_df(
     strategy_mode, live_result, live_trades,
-    qty_overrides=None, entry_price_overrides=None, fx_daily=None, fallback_fx=None,
+    qty_overrides=None, entry_price_overrides=None, excluded_positions=None, fx_daily=None, fallback_fx=None,
 ):
     """실시간 평가손익 계산에 사용할 미청산 포지션 원자료."""
     if strategy_mode.startswith(("V9", "V10")):
@@ -1866,7 +1916,10 @@ def build_live_open_holdings_df(
         if not positions:
             return pd.DataFrame(columns=["Entry_Price", "Invested"])
         rows = []
+        excluded = set(_sanitize_v9_excluded_positions(excluded_positions or []))
         for p in positions:
+            if v9_position_key(p) in excluded:
+                continue
             entry_date = pd.Timestamp(p["entry_date"]).normalize()
             strategy_entry_price = float(p["entry_price"])
             key = v9_position_key(p)
@@ -1875,7 +1928,7 @@ def build_live_open_holdings_df(
             entry_fx = lookup_entry_fx(entry_date, fx_daily, fallback_fx)
             if entry_fx is not None and entry_fx > 0 and entry_price > 0:
                 strategy_qty = int(round(model_invested / (strategy_entry_price * entry_fx)))
-                actual_qty = int((qty_overrides or {}).get(key, max(1, strategy_qty)))
+                actual_qty = max(0, int((qty_overrides or {}).get(key, max(1, strategy_qty))))
                 actual_invested = actual_qty * entry_price * entry_fx
             else:
                 actual_invested = model_invested
@@ -3354,6 +3407,8 @@ if "v9_persisted_state_loaded" not in st.session_state:
     persisted_state, persisted_status = _load_persisted_v9_state()
     st.session_state["v9_settings"] = persisted_state.get("settings", {})
     st.session_state["v9_quantity_overrides"] = persisted_state.get("quantities", {})
+    st.session_state["v9_entry_price_overrides"] = persisted_state.get("entry_prices", {})
+    st.session_state["v9_excluded_positions"] = persisted_state.get("excluded_positions", [])
     st.session_state["v9_cashflows"] = persisted_state.get("cashflows", [])
     st.session_state["v9_trade_overrides"] = persisted_state.get("trade_overrides", {})
     st.session_state["v9_manual_trades"] = persisted_state.get("manual_trades", [])
@@ -3985,6 +4040,7 @@ if strategy_mode.startswith(("V9", "V10")):
         confirmed_close=live_close,
         qty_overrides=v9_quantity_overrides,
         entry_price_overrides=v9_entry_price_overrides,
+        excluded_positions=st.session_state.get("v9_excluded_positions", []),
         fx_daily=v9_fx_daily,
         fallback_fx=portfolio_fallback_fx,
     )
@@ -4010,6 +4066,7 @@ if strategy_mode.startswith(("V9", "V10")):
             qty_overrides=v9_quantity_overrides,
             fx_daily=execution_fx_daily,
             fallback_fx=portfolio_fallback_fx,
+            excluded_positions=st.session_state.get("v9_excluded_positions", []),
         )
 
     # 전략에 없던 수동 추가 거래는 'NAV 반영'으로 저장한 경우 실현손익을 실전 NAV에 추가합니다.
@@ -4493,6 +4550,7 @@ def render_compact_trading_dashboard():
         live_trades,
         qty_overrides=v9_quantity_overrides,
         entry_price_overrides=v9_entry_price_overrides,
+        excluded_positions=st.session_state.get("v9_excluded_positions", []),
         fx_daily=v9_fx_daily,
         fallback_fx=portfolio_fallback_fx,
     )
@@ -4792,6 +4850,7 @@ def render_compact_trading_dashboard():
             fallback_fx=portfolio_fallback_fx,
             qty_overrides=v9_quantity_overrides,
             entry_price_overrides=v9_entry_price_overrides,
+            excluded_positions=st.session_state.get("v9_excluded_positions", []),
         )
     else:
         realtime_positions = build_open_positions_table(
@@ -4828,7 +4887,7 @@ def render_compact_trading_dashboard():
 
     if strategy_mode.startswith(("V9", "V10")):
         preferred_cols = [
-            "슬롯", "매수유형", "매수일", "매수금액", "전략 매수가", "매수가", "적용환율", "보유수량",
+            "_key", "슬롯", "매수유형", "매수일", "매수금액", "전략 매수가", "매수가", "적용환율", "보유수량",
             "LOC 모드", "LOC 주문가", "현재가", "현재 수익률",
             "평가손익", "MOC 예정일", "남은 거래일", "상태",
         ]
@@ -4836,13 +4895,15 @@ def render_compact_trading_dashboard():
 
         # 실제 보유수량과 실제 매수체결가는 Open Positions 표에서 직접 수정합니다.
         editor_table = position_table.copy()
+        excluded_now = set(_sanitize_v9_excluded_positions(st.session_state.get("v9_excluded_positions", [])))
+        editor_table["미매수 처리"] = False
         editor_table["보유수량"] = (
             editor_table["보유수량"]
             .astype(str)
             .str.replace("주", "", regex=False)
             .str.replace(",", "", regex=False)
             .pipe(pd.to_numeric, errors="coerce")
-            .fillna(1)
+            .fillna(0)
             .round()
             .astype(int)
         )
@@ -4869,12 +4930,16 @@ def render_compact_trading_dashboard():
             styled_editor,
             use_container_width=True,
             hide_index=True,
-            disabled=[c for c in editor_table.columns if c not in {"보유수량", "매수가"}],
+            disabled=[c for c in editor_table.columns if c not in {"보유수량", "매수가", "미매수 처리"}],
             column_config={
+                "_key": None,
                 "LOC 모드": st.column_config.TextColumn("🔎 현재 LOC 모드", width="large"),
                 "LOC 주문가": st.column_config.TextColumn("🎯 LOC 주문가", width="medium"),
                 "보유수량": st.column_config.NumberColumn(
-                    "✏️ 실제 보유수량", min_value=1, step=1, format="%d주", width="medium"
+                    "✏️ 실제 보유수량", min_value=0, step=1, format="%d주", width="medium"
+                ),
+                "미매수 처리": st.column_config.CheckboxColumn(
+                    "🗑️ 미매수 처리", help="실제로 매수하지 않은 슬롯이면 체크하세요. 저장 후 실전 Open Positions에서 제외됩니다.", width="small"
                 ),
                 "매수가": st.column_config.NumberColumn(
                     "✏️ 실제 매수체결가", min_value=0.01, step=0.01, format="$%.2f", width="medium"
@@ -4894,15 +4959,14 @@ def render_compact_trading_dashboard():
         ):
             merged_map = dict(st.session_state.get("v9_quantity_overrides", {}))
             merged_price_map = dict(st.session_state.get("v9_entry_price_overrides", {}))
-            key_by_slot = {
-                i: v9_position_key(pos)
-                for i, pos in enumerate(v9_open_positions or [], start=1)
-            }
+            excluded_set = set(_sanitize_v9_excluded_positions(st.session_state.get("v9_excluded_positions", [])))
             for _, row in edited_positions.iterrows():
-                slot_no = int(row["슬롯"])
-                key = key_by_slot.get(slot_no)
+                key = str(row.get("_key", "")).strip()
                 if key:
-                    merged_map[key] = max(1, int(round(float(row["보유수량"]))))
+                    qty = max(0, int(round(float(row["보유수량"]))))
+                    merged_map[key] = qty
+                    if bool(row.get("미매수 처리", False)):
+                        excluded_set.add(key)
                     actual_entry = float(row["매수가"])
                     if actual_entry <= 0:
                         st.error("실제 매수체결가는 0보다 커야 합니다.")
@@ -4910,7 +4974,7 @@ def render_compact_trading_dashboard():
                     merged_price_map[key] = round(actual_entry, 6)
             st.session_state["v9_quantity_overrides"] = merged_map
             st.session_state["v9_entry_price_overrides"] = merged_price_map
-            ok, msg = save_persisted_v9_open_position_overrides(merged_map, merged_price_map)
+            ok, msg = save_persisted_v9_open_position_overrides(merged_map, merged_price_map, sorted(excluded_set))
             st.session_state["v9_quantity_persistence_status"] = msg
             st.session_state["v9_quantity_persistence_ok"] = ok
             st.rerun()
@@ -4922,7 +4986,9 @@ def render_compact_trading_dashboard():
         ):
             merged_map = dict(st.session_state.get("v9_quantity_overrides", {}))
             merged_price_map = dict(st.session_state.get("v9_entry_price_overrides", {}))
+            excluded_set = set(_sanitize_v9_excluded_positions(st.session_state.get("v9_excluded_positions", [])))
             for pos in v9_open_positions or []:
+                excluded_set.discard(v9_position_key(pos))
                 key = v9_position_key(pos)
                 entry_date = pd.Timestamp(pos["entry_date"]).normalize()
                 entry_price = float(pos["entry_price"])
@@ -4933,17 +4999,37 @@ def render_compact_trading_dashboard():
                 merged_price_map.pop(key, None)
             st.session_state["v9_quantity_overrides"] = merged_map
             st.session_state["v9_entry_price_overrides"] = merged_price_map
-            ok, msg = save_persisted_v9_open_position_overrides(merged_map, merged_price_map)
+            ok, msg = save_persisted_v9_open_position_overrides(merged_map, merged_price_map, sorted(excluded_set))
             st.session_state["v9_quantity_persistence_status"] = msg
             st.session_state["v9_quantity_persistence_ok"] = ok
             st.rerun()
+
+        excluded_keys = _sanitize_v9_excluded_positions(st.session_state.get("v9_excluded_positions", []))
+        if excluded_keys:
+            with st.expander(f"↩️ 미매수 처리한 슬롯 복원 ({len(excluded_keys)}개)"):
+                restore_key = st.selectbox(
+                    "복원할 슬롯",
+                    excluded_keys,
+                    format_func=lambda x: x,
+                    key="restore_excluded_v9_position",
+                )
+                if st.button("선택 슬롯 다시 표시", use_container_width=True, key="restore_excluded_v9_position_btn"):
+                    new_excluded = [x for x in excluded_keys if x != restore_key]
+                    ok, msg = save_persisted_v9_open_position_overrides(
+                        st.session_state.get("v9_quantity_overrides", {}),
+                        st.session_state.get("v9_entry_price_overrides", {}),
+                        new_excluded,
+                    )
+                    st.session_state["v9_quantity_persistence_status"] = msg
+                    st.session_state["v9_quantity_persistence_ok"] = ok
+                    st.rerun()
 
         persistence_msg = st.session_state.get("v9_quantity_persistence_status", "")
         if portfolio_persistence_enabled():
             if st.session_state.get("v9_quantity_persistence_ok") is False:
                 st.error(f"☁️ 영구저장 오류 · {persistence_msg}")
             else:
-                st.caption(f"🔐 실제 보유수량·매수체결가 영구저장 연결됨 · {persistence_msg or 'GitHub 암호화 저장소 사용'}")
+                st.caption(f"🔐 실제 보유수량·매수체결가·미매수 슬롯 영구저장 연결됨 · {persistence_msg or 'GitHub 암호화 저장소 사용'}")
         else:
             st.warning(
                 "현재는 세션 저장만 사용 중입니다. Streamlit Secrets의 GitHub/암호화 설정을 확인하세요."
@@ -6132,6 +6218,7 @@ with tab6:
                 trade_overrides=trade_overrides_for_editor,
                 fx_daily=trades_fx_daily,
                 fallback_fx=portfolio_fallback_fx,
+                excluded_positions=st.session_state.get("v9_excluded_positions", []),
             )
             manual_for_editor = _sanitize_v9_manual_trades(st.session_state.get("v9_manual_trades", []))
             if manual_for_editor:
