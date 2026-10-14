@@ -4118,6 +4118,7 @@ if strategy_mode.startswith(("V9", "V10")):
         fallback_fx=portfolio_fallback_fx,
         qty_overrides=v9_quantity_overrides,
         entry_price_overrides=v9_entry_price_overrides,
+        excluded_positions=st.session_state.get("v9_excluded_positions", []),
     )
 else:
     live_nav = model_live_nav
@@ -4905,6 +4906,64 @@ def render_compact_trading_dashboard():
             "평가손익", "MOC 예정일", "남은 거래일", "상태",
         ]
         position_table = position_table[[c for c in preferred_cols if c in position_table.columns]]
+
+        # 실제로 매수하지 않은 자동 생성 슬롯은 실전 운용 기록에서 완전히 제외할 수 있습니다.
+        # data_editor의 숨김 키에 의존하지 않고 현재 표시 테이블의 고정 슬롯 키를 직접 저장합니다.
+        if "_key" in position_table.columns and not position_table.empty:
+            delete_options = {}
+            for _, _row in position_table.iterrows():
+                _key = str(_row.get("_key", "")).strip()
+                if not _key:
+                    continue
+                _slot = _row.get("슬롯", "-")
+                _date = _row.get("매수일", "-")
+                _buy_type = _row.get("매수유형", "기본 MOC")
+                _price = _row.get("매수가", _row.get("전략 매수가", "-"))
+                _label = f"슬롯 {_slot} · {_date} · {_buy_type} · {_price}"
+                delete_options[_label] = _key
+
+            if delete_options:
+                del_c1, del_c2 = st.columns([3, 1])
+                with del_c1:
+                    delete_label = st.selectbox(
+                        "실제로 매수하지 않은 슬롯 선택",
+                        list(delete_options.keys()),
+                        key="delete_unbought_open_position_select",
+                    )
+                with del_c2:
+                    st.write("")
+                    st.write("")
+                    if st.button(
+                        "🗑️ 선택 슬롯 삭제",
+                        use_container_width=True,
+                        key="delete_unbought_open_position_btn",
+                        help="백테스트 전략 기록은 유지하고 실전 운용 기록에서만 해당 매수를 없었던 것으로 처리합니다.",
+                    ):
+                        delete_key = delete_options[delete_label]
+                        merged_map = dict(st.session_state.get("v9_quantity_overrides", {}))
+                        merged_price_map = dict(st.session_state.get("v9_entry_price_overrides", {}))
+                        excluded_set = set(_sanitize_v9_excluded_positions(
+                            st.session_state.get("v9_excluded_positions", [])
+                        ))
+                        # 명시적 삭제: 0주 + 영구 제외 키를 동시에 저장합니다.
+                        merged_map[delete_key] = 0
+                        merged_price_map.pop(delete_key, None)
+                        excluded_set.add(delete_key)
+                        st.session_state["v9_quantity_overrides"] = merged_map
+                        st.session_state["v9_entry_price_overrides"] = merged_price_map
+                        st.session_state["v9_excluded_positions"] = sorted(excluded_set)
+                        ok, msg = save_persisted_v9_open_position_overrides(
+                            merged_map,
+                            merged_price_map,
+                            sorted(excluded_set),
+                        )
+                        st.session_state["v9_quantity_persistence_status"] = msg
+                        st.session_state["v9_quantity_persistence_ok"] = ok
+                        if ok:
+                            st.success("선택한 슬롯을 실전 운용 기록에서 삭제했습니다.")
+                            st.rerun()
+                        else:
+                            st.error(msg)
 
         # 실제 보유수량과 실제 매수체결가는 Open Positions 표에서 직접 수정합니다.
         editor_table = position_table.copy()
