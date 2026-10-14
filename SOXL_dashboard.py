@@ -1845,10 +1845,10 @@ def build_v9_open_positions_table(
 
         if tb3_state:
             target_price = entry_price + TB3_LOC_PLUS_DOLLAR
-            loc_mode = "🛡️ 방어 LOC · 매수가 + $0.10"
+            loc_mode = "방어 +$0.10"
         else:
             target_price = entry_price * (1 + BASE_TARGET_RETURN)
-            loc_mode = "🎯 일반 LOC · +2.7%"
+            loc_mode = "일반 +2.7%"
 
         current_return = float(current_close) / entry_price - 1
 
@@ -1885,6 +1885,7 @@ def build_v9_open_positions_table(
             actual_invested = invested
 
         rows.append({
+            "_key": key,
             "슬롯": slot_no,
             "매수유형": str(pos.get("buy_type", "기본 MOC")),
             "매수일": entry_date.date(),
@@ -4923,6 +4924,8 @@ def render_compact_trading_dashboard():
                 delete_options[_label] = _key
 
             if delete_options:
+                st.markdown("**🗑️ 실전 슬롯 관리**")
+                st.caption("실제로 매수하지 않은 자동 생성 슬롯을 선택해 실전 운용 기록에서 삭제할 수 있습니다.")
                 del_c1, del_c2 = st.columns([3, 1])
                 with del_c1:
                     delete_label = st.selectbox(
@@ -5005,20 +5008,29 @@ def render_compact_trading_dashboard():
             disabled=[c for c in editor_table.columns if c not in {"보유수량", "매수가", "미매수 처리"}],
             column_config={
                 "_key": None,
-                "LOC 모드": st.column_config.TextColumn("🔎 현재 LOC 모드", width="large"),
-                "LOC 주문가": st.column_config.TextColumn("🎯 LOC 주문가", width="medium"),
-                "보유수량": st.column_config.NumberColumn(
-                    "✏️ 실제 보유수량", min_value=0, step=1, format="%d주", width="medium"
-                ),
-                "미매수 처리": st.column_config.CheckboxColumn(
-                    "🗑️ 미매수 처리", help="실제로 매수하지 않은 슬롯이면 체크하세요. 저장 후 실전 Open Positions에서 제외됩니다.", width="small"
-                ),
+                "슬롯": st.column_config.NumberColumn("슬롯", width="small"),
+                "매수유형": st.column_config.TextColumn("매수유형", width="small"),
+                "매수일": st.column_config.DateColumn("매수일", width="small"),
+                "매수금액": st.column_config.TextColumn("매수금액", width="small"),
+                "전략 매수가": st.column_config.TextColumn("전략가", width="small"),
                 "매수가": st.column_config.NumberColumn(
-                    "✏️ 실제 매수체결가", min_value=0.01, step=0.01, format="$%.2f", width="medium"
+                    "✏️ 실제 체결가", min_value=0.01, step=0.01, format="$%.2f", width="small"
                 ),
-                "전략 매수가": st.column_config.TextColumn("전략 매수가", width="medium"),
-                "적용환율": st.column_config.TextColumn("적용환율", width="medium"),
-                "매수금액": st.column_config.TextColumn("매수금액", width="medium"),
+                "적용환율": st.column_config.TextColumn("환율", width="small"),
+                "보유수량": st.column_config.NumberColumn(
+                    "✏️ 수량", min_value=0, step=1, format="%d주", width="small"
+                ),
+                "LOC 모드": st.column_config.TextColumn("LOC", width="small"),
+                "LOC 주문가": st.column_config.TextColumn("LOC가", width="small"),
+                "현재가": st.column_config.TextColumn("현재가", width="small"),
+                "현재 수익률": st.column_config.TextColumn("수익률", width="small"),
+                "평가손익": st.column_config.TextColumn("평가손익", width="small"),
+                "MOC 예정일": st.column_config.TextColumn("MOC일", width="small"),
+                "남은 거래일": st.column_config.TextColumn("남은일", width="small"),
+                "상태": st.column_config.TextColumn("상태", width="medium"),
+                "미매수 처리": st.column_config.CheckboxColumn(
+                    "🗑️ 미매수", help="실제로 매수하지 않은 슬롯이면 체크하세요. 저장 후 실전 Open Positions에서 제외됩니다.", width="small"
+                ),
             },
             key="v9_open_positions_editor",
         )
