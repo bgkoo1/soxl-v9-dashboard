@@ -4095,6 +4095,19 @@ if strategy_mode.startswith(("V9", "V10")):
         + manual_realized_profit
         + net_external_cashflow
     )
+
+    # 실제 운용 슬롯 수는 전략 엔진의 open_positions 개수가 아니라
+    # 사용자가 실제로 보유 중인 슬롯(실제수량 > 0)만 셉니다.
+    # 따라서 '미매수 처리' 슬롯과 실제 보유수량 0 슬롯은
+    # 오늘 할 일 / 신규매수 가능 슬롯 계산에서 빈 슬롯으로 취급합니다.
+    actual_positions_df = actual_portfolio.get("positions", pd.DataFrame())
+    if isinstance(actual_positions_df, pd.DataFrame) and not actual_positions_df.empty:
+        live_open_count = int(
+            (pd.to_numeric(actual_positions_df["Actual_Qty"], errors="coerce").fillna(0) > 0).sum()
+        )
+    else:
+        live_open_count = 0
+
     open_positions_display = build_v9_open_positions_table(
         v9_open_positions,
         current_close=live_close,
