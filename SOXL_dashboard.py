@@ -4153,6 +4153,13 @@ if strategy_mode.startswith(("V9", "V10", "V11")):
         entry_price_overrides=v9_entry_price_overrides,
         excluded_positions=st.session_state.get("v9_excluded_positions", []),
     )
+    if strategy_mode.startswith("V11") and not open_positions_display.empty:
+        pending = {v9_position_key(p) for p in v9_open_positions if p.get("d2_flag", False)}
+        if "_key" in open_positions_display.columns and "상태" in open_positions_display.columns:
+            flagged = open_positions_display["_key"].isin(pending)
+            open_positions_display.loc[flagged, "상태"] = "MOC(종가 매도) 오늘 예정"
+            if "남은 거래일" in open_positions_display.columns:
+                open_positions_display.loc[flagged, "남은 거래일"] = "오늘"
 else:
     live_nav = model_live_nav
     open_positions_display = build_open_positions_table(
