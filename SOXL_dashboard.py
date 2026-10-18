@@ -4696,7 +4696,7 @@ def render_compact_trading_dashboard():
                     f"""
                     <div class="v10-crash-card">
                         <div class="v10-crash-head">
-                            <div class="v10-crash-title">⚡ V10 급락 추가매수</div>
+                            <div class="v10-crash-title">⚡ -9% 급락 추가매수</div>
                             <div class="v10-crash-badge">추가 LOC 1슬롯 대기</div>
                         </div>
                         <div class="v10-crash-grid">
@@ -4861,7 +4861,7 @@ def render_compact_trading_dashboard():
             if strategy_mode.startswith(("V10", "V11")):
                 crash_text = f"${v10_crash_loc_price:,.2f}" if v10_crash_loc_price is not None else "계산 필요"
                 st.write(
-                    f"V10 급락 추가매수: 전일 종가 × 0.91 = {crash_text} LOC · "
+                    f"급락 추가매수: 전일 종가 × 0.91 = {crash_text} LOC · "
                     "당일 종가가 기준가 이하이면 같은 종가에 추가 1슬롯 체결"
                 )
         if pd.notna(latest_ma_gap):
@@ -4914,6 +4914,12 @@ def render_compact_trading_dashboard():
         return
 
     position_table = realtime_positions.copy()
+    if strategy_mode.startswith("V11") and not position_table.empty:
+        flagged = {v9_position_key(p) for p in v9_open_positions if p.get("d2_flag", False)}
+        if "_key" in position_table.columns and "상태" in position_table.columns:
+            position_table.loc[position_table["_key"].isin(flagged), "상태"] = "MOC(종가 매도) 오늘 예정"
+        if "_key" in position_table.columns and "LOC 모드" in position_table.columns:
+            position_table.loc[position_table["_key"].isin(flagged), "LOC 모드"] = "D2 -10% · 다음 MOC"
 
     def _remaining_sort_value(value):
         value = str(value)
@@ -5164,7 +5170,7 @@ def render_compact_trading_dashboard():
             f"현재가·수익률·평가손익은 {'장중 참고시세' if snapshot['is_live'] else '마지막 확정 종가'} 기준입니다. · "
             f"실제 보유수량과 실제 매수체결가는 표에서 직접 수정할 수 있으며, 저장값은 매수금액·현재 수익률·평가손익·LOC 주문가·실전 NAV 계산에 반영됩니다. · "
             f"목표 매도가는 직전 확정 일봉의 단기하락추세 상태를 반영합니다. · "
-            f"V10 선택 시 급락일에 생성된 추가 슬롯은 '급락 LOC (-9%)'로 구분되어 다음 확정 일봉 업데이트 후 자동 표시됩니다. · "
+            f"V10/V11 선택 시 급락일에 생성된 추가 슬롯은 '급락 LOC (-9%)'로 구분되어 다음 확정 일봉 업데이트 후 자동 표시됩니다. · "
             f"MOC 예정일은 매수일 Day 0 이후 {BASE_HOLDING_DAYS}번째 미국 거래일입니다."
         )
     else:
