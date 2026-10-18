@@ -26,7 +26,7 @@ from SOXL_V9_backtest import (
     run_v9_backtest,
     TB3_LOC_PLUS_DOLLAR,
 )
-from SOXL_V11_backtest import run_v11_backtest
+from SOXL_V11_backtest import run_v11_backtest, run_v11_live_transition
 from SOXL_V10_backtest import (
     run_v10_backtest,
     CRASH_THRESHOLD as V10_CRASH_THRESHOLD,
@@ -3448,8 +3448,8 @@ st.sidebar.subheader(
 strategy_mode = st.sidebar.radio(
     "Strategy(전략) 선택",
     [
-        "V10 Final(V9 + -9% 급락 추가매수)",
         "V11 Final(D2 -10% + 4일 연속 하락 방어)",
+        "V10 Final(V9 + -9% 급락 추가매수)",
         "V9 Final(약세필터 + 하락추세 방어LOC)",
         "V8 장기과매도 약세필터",
         "V7 Base(기본 7분할)",
@@ -3459,7 +3459,7 @@ strategy_mode = st.sidebar.radio(
 )
 
 if strategy_mode.startswith("V11"):
-    st.sidebar.error("현재 V11 실전 화면은 기존 V10 실보유 슬롯을 자동 이관하지 못합니다. 실보유 슬롯·잔고가 정확하게 나오지 않을 수 있으므로 주문 판단에는 사용하지 마세요. 기존 보유분 조회는 V10을 선택하세요.")
+    st.sidebar.info("V11 실전 전환일: 2026-10-19 (미국 거래일). 이전 V10 보유 슬롯과 저장 수량·매수가를 유지하고, 이후 신규 주문에 V11 규칙을 적용합니다.")
 
 is_custom = strategy_mode.startswith("Custom")
 
@@ -3975,7 +3975,7 @@ if live_df.empty:
 live_close = float(full_df.iloc[-1]["Close"])
 
 if strategy_mode.startswith("V11"):
-    live_result = run_v11_backtest(raw_df=full_df, initial_capital=initial_capital, start_date=start_date, end_date=latest_confirmed_date)
+    live_result = run_v11_live_transition(raw_df=full_df, initial_capital=initial_capital, start_date=start_date, end_date=latest_confirmed_date, transition_date="2026-10-19")
     live_cash = float(live_result["equity"]["Cash"].iloc[-1])
     live_open_count = len(live_result.get("open_positions", []))
 elif strategy_mode.startswith(("V10", "V11")):
