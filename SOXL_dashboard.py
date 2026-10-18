@@ -3448,8 +3448,8 @@ st.sidebar.subheader(
 strategy_mode = st.sidebar.radio(
     "Strategy(전략) 선택",
     [
-        "V11 Final(D2 -10% + 4일 연속 하락 방어)",
         "V10 Final(V9 + -9% 급락 추가매수)",
+        "V11 Final(D2 -10% + 4일 연속 하락 방어)",
         "V9 Final(약세필터 + 하락추세 방어LOC)",
         "V8 장기과매도 약세필터",
         "V7 Base(기본 7분할)",
@@ -3459,7 +3459,7 @@ strategy_mode = st.sidebar.radio(
 )
 
 if strategy_mode.startswith("V11"):
-    st.sidebar.warning("V11에서는 과거 V10과 슬롯 매매 경로가 다릅니다. V10에 저장한 수량·체결가는 V11 슬롯으로 자동 이관하지 않으므로 실제 보유 내역을 확인해 다시 입력하세요.")
+    st.sidebar.error("현재 V11 실전 화면은 기존 V10 실보유 슬롯을 자동 이관하지 못합니다. 실보유 슬롯·잔고가 정확하게 나오지 않을 수 있으므로 주문 판단에는 사용하지 마세요. 기존 보유분 조회는 V10을 선택하세요.")
 
 is_custom = strategy_mode.startswith("Custom")
 
