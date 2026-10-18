@@ -3458,6 +3458,9 @@ strategy_mode = st.sidebar.radio(
     index=0,
 )
 
+if strategy_mode.startswith("V11"):
+    st.sidebar.warning("V11에서는 과거 V10과 슬롯 매매 경로가 다릅니다. V10에 저장한 수량·체결가는 V11 슬롯으로 자동 이관하지 않으므로 실제 보유 내역을 확인해 다시 입력하세요.")
+
 is_custom = strategy_mode.startswith("Custom")
 
 initial_capital = (
