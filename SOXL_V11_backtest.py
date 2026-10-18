@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from SOXL_V10_backtest import run_v10_backtest
 
 from SOXL_V9_backtest import (
     add_v9_signals,
@@ -36,6 +37,9 @@ def run_v11_backtest(
     crash_extra_slots=1,
     d2_cut=-0.10,
     pause_streak=4,
+    seed_positions=None,
+    seed_cash=None,
+    seed_nav=None,
 ):
     """V11 Final: V10 with TB3 disabled, D2 early exit, 4-down-day entry pause.
 
@@ -74,10 +78,10 @@ def run_v11_backtest(
     if df.empty:
         raise ValueError("선택한 기간에 데이터가 없습니다.")
 
-    cash = float(initial_capital)
-    positions, trades, equity_records, daily_records = [], [], [], []
-    previous_nav = float(initial_capital)
-    max_open_positions = 0
+    cash = float(initial_capital if seed_cash is None else seed_cash)
+    positions, trades, equity_records, daily_records = list(seed_positions or []), [], [], []
+    previous_nav = float(initial_capital if seed_nav is None else seed_nav)
+    max_open_positions = len(positions)
     risk_days = risk_skip_days = tb3_days = 0
     normal_buy_days = blocked_buy_days = 0
     crash_signal_days = crash_extra_buy_days = crash_slots_bought = 0
@@ -284,3 +288,53 @@ def run_v11_backtest(
         "open_positions": positions,
         "signal_data": df,
     }
+
+
+def run_v11_live_transition(raw_df, initial_capital=INITIAL_CAPITAL,
+                            start_date=None, end_date=None,
+                            transition_date="2026-10-19"):
+    """V10 history through the prior trading day, then V11 from transition_date.
+
+    Preserves V10 position_id, entry_date, entry index, and synthetic model shares
+    for ALL still-open legacy slots. Thus existing encrypted V10 overrides remain
+    addressable by their original v10| keys. Never edits persistence storage.
+    """
+    switch = pd.Timestamp(transition_date).normalize()
+    prices = raw_df.copy()
+    prices["Date"] = pd.to_datetime(prices["Date"]).dt.normalize()
+    legacy_end = prices.loc[prices["Date"] < switch, "Date"].max()
+    if pd.isna(legacy_end):
+        raise ValueError("V11 전환일 이전에 V10 가격 데이터가 없습니다.")
+    legacy = run_v10_backtest(
+        raw_df=raw_df, initial_capital=initial_capital,
+        start_date=start_date, end_date=legacy_end,
+    )
+    target_end = pd.Timestamp(end_date).normalize() if end_date is not None else prices["Date"].max()
+    if target_end < switch or not (prices["Date"].between(switch, target_end)).any():
+        legacy["transition_date"] = switch
+        legacy["strategy_phase"] = "V10_LEGACY"
+        return legacy
+
+    # Shallow-copy dicts to avoid mutating snapshots from the V10 engine.
+    carried = [dict(pos) for pos in legacy["open_positions"]]
+    next_period = run_v11_backtest(
+        raw_df=raw_df, initial_capital=initial_capital,
+        start_date=switch, end_date=target_end,
+        seed_positions=carried,
+        seed_cash=float(legacy["equity"]["Cash"].iloc[-1]),
+        seed_nav=float(legacy["equity"]["Equity"].iloc[-1]),
+    )
+    full_trades = pd.concat([legacy["trades"], next_period["trades"]], ignore_index=True)
+    full_equity = pd.concat([legacy["equity"], next_period["equity"]], ignore_index=True)
+    full_daily = pd.concat([legacy["daily"], next_period["daily"]], ignore_index=True)
+    next_period["trades"] = full_trades
+    next_period["equity"] = full_equity
+    next_period["daily"] = full_daily
+    next_period["stats"] = calculate_v9_statistics(
+        full_trades, full_equity, initial_capital,
+        int(max(legacy["stats"].get("max_open_positions", 0), next_period["stats"].get("max_open_positions", 0)))
+    )
+    next_period["transition_date"] = switch
+    next_period["strategy_phase"] = "V11_FROM_SWITCH"
+    next_period["carried_v10_slot_ids"] = [p.get("position_id") for p in carried]
+    return next_period
