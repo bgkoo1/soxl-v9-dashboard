@@ -189,7 +189,7 @@ def run_v11_backtest(
                     position_seq += 1
                     buy_type = (f"급락 LOC ({crash_threshold:.1%})" if buy_index >= 1 else "기본 MOC")
                     positions.append({
-                        "position_id": f"{date.date().isoformat()}-{position_seq:06d}",
+                        "position_id": f"v11-{date.date().isoformat()}-{position_seq:06d}",
                         "buy_type": buy_type,
                         "entry_date": date,
                         "entry_original_index": original_index,
