@@ -1474,6 +1474,8 @@ def v9_position_key(pos):
     V9 및 과거 저장값은 기존 날짜|가격 키를 그대로 유지합니다.
     """
     position_id = pos.get("position_id") if hasattr(pos, "get") else None
+    if position_id is not None and str(position_id).startswith("v11-"):
+        return f"v11|{str(position_id).strip()}"
     if position_id is not None and str(position_id).strip() and str(position_id).lower() != "nan":
         return f"v10|{str(position_id).strip()}"
     d = pd.Timestamp(pos["entry_date"]).normalize().date().isoformat()
