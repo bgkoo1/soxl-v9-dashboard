@@ -3,7 +3,8 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from SOXL_V11_backtest import run_v11_backtest
+from SOXL_V11_backtest import run_v11_backtest, run_v11_live_transition
+from SOXL_V10_backtest import run_v10_backtest
 
 
 def make_data(changes):
@@ -32,6 +33,32 @@ class V11RulesTest(unittest.TestCase):
                          (exits.Exit_Type == "D2_CUT_NEXT_MOC")]
         self.assertFalse(selected.empty)
         self.assertTrue((pd.to_datetime(selected.Exit_Date) == data.Date.iloc[214]).all())
+
+    def test_legacy_slots_preserved_at_switch(self):
+        data = make_data({})
+        switch = data.Date.iloc[215]
+        legacy = run_v10_backtest(data, start_date=data.Date.iloc[205], end_date=data.Date.iloc[214])
+        transitioned = run_v11_live_transition(
+            data, start_date=data.Date.iloc[205], end_date=data.Date.iloc[214],
+            transition_date=switch,
+        )
+        self.assertEqual(
+            [p["position_id"] for p in legacy["open_positions"]],
+            [p["position_id"] for p in transitioned["open_positions"]],
+        )
+        self.assertEqual(float(legacy["equity"]["Equity"].iloc[-1]),
+                         float(transitioned["equity"]["Equity"].iloc[-1]))
+
+    def test_legacy_ids_survive_first_v11_session(self):
+        data = make_data({})
+        switch = data.Date.iloc[215]
+        legacy = run_v10_backtest(data, start_date=data.Date.iloc[210], end_date=data.Date.iloc[214])
+        old_ids = {p["position_id"] for p in legacy["open_positions"]}
+        transitioned = run_v11_live_transition(
+            data, start_date=data.Date.iloc[210], end_date=switch, transition_date=switch)
+        still_open = {p["position_id"] for p in transitioned["open_positions"]}
+        self.assertTrue(old_ids.issubset(still_open))
+        self.assertTrue(any(str(x).startswith("v11-") for x in still_open))
 
     def test_four_down_closes_block_all_new_buys(self):
         data = make_data({211: 99., 212: 98., 213: 97., 214: 96., 215: 95., 216: 97.})
