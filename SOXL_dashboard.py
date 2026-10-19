@@ -5326,148 +5326,71 @@ def render_compact_trading_dashboard():
                 _label = f"슬롯 {_slot} · {_date} · {_buy_type} · {_price}"
                 delete_options[_label] = _key
 
-            # Stable identifier-based exclusion. Never infer identity from row number.
-            # Only the explicitly confirmed position_id is added to excluded_positions.
+            # The dropdown values are immutable position keys, never row numbers.
+            # Change widget identity whenever the visible slot roster changes.
             if delete_options:
-                active_positions_by_key = {
-                    v9_position_key(pos): pos for pos in v9_open_positions
-                    if v9_position_key(pos) not in set(_sanitize_v9_excluded_positions(
-                        st.session_state.get("v9_excluded_positions", [])))
-                }
-                active_rows_by_key = {
-                    str(row["_key"]): row for _, row in position_table.iterrows()
-                    if str(row["_key"]) in active_positions_by_key
-                }
-                # Give the widget a new identity whenever the actual slot roster changes:
-                # Streamlit must not retain an old selectbox index after a slot disappears.
-                roster_token = "|".join(sorted(active_rows_by_key))
-                roster_hash = __import__("hashlib").sha256(roster_token.encode()).hexdigest()[:12]
-                with st.expander("🗑️ 실제 미매수 슬롯 제외", expanded=False):
-                    st.caption("실제로 체결되지 않은 슬롯 한 건만 제외합니다. "
-                               "매수일과 슬롯 ID를 확인한 뒤 저장하며, 기존 수량·체결가는 보존됩니다.")
-                    with st.form(f"exclude_slot_form_{roster_hash}", clear_on_submit=True):
-                        candidate_keys = list(active_rows_by_key.keys())
+                active_positions = {}
+                for pos in v9_open_positions:
+                    key = v9_position_key(pos)
+                    if key in active_positions:
+                        st.error("중복 슬롯 ID가 발견되어 미매수 제외 기능을 중단했습니다.")
+                        active_positions = {}
+                        break
+                    active_positions[key] = pos
+                shown_keys = [str(k) for k in position_table["_key"].tolist()
+                              if str(k) in active_positions]
+                if shown_keys:
+                    roster_hash = __import__("hashlib").sha256(
+                        "|".join(sorted(shown_keys)).encode("utf-8")
+                    ).hexdigest()[:12]
+                    row_by_key = {str(row["_key"]): row
+                                  for _, row in position_table.iterrows()
+                                  if str(row["_key"]) in shown_keys}
+                    st.markdown("**🗑️ 실제 미매수 슬롯 제외**")
+                    col_pick, col_remove = st.columns([4, 1])
+                    with col_pick:
                         selected_key = st.selectbox(
-                            "제외할 슬롯 (매수일 · 유형 · 전략가 · ID)",
-                            candidate_keys,
+                            "미매수 슬롯 선택",
+                            shown_keys,
                             format_func=lambda key: (
-                                f"{active_rows_by_key[key]['매수일']} · "
-                                f"{active_rows_by_key[key]['매수유형']} · "
-                                f"{active_rows_by_key[key]['전략 매수가']} · ID {key}"
+                                f"{row_by_key[key]['매수일']} · "
+                                f"{row_by_key[key]['매수유형']} · "
+                                f"{row_by_key[key]['전략 매수가']} · ID {key}"
                             ),
+                            key=f"exclude_one_slot_{roster_hash}",
                         )
-                        selected_position = active_positions_by_key[selected_key]
-                        expected_date = pd.Timestamp(selected_position["entry_date"]).date().isoformat()
-                        st.info(f"선택한 슬롯: {expected_date} / "
-                                f"ID {selected_key} / "
-                                f"전략 매수가 ${float(selected_position['entry_price']):.4f}")
-                        date_confirmation = st.text_input(
-                            "선택한 슬롯의 매수일을 입력하세요 (YYYY-MM-DD)",
-                            placeholder="예: 2026-10-16",
-                        )
-                        confirmation = st.checkbox(
-                            "이 슬롯은 실제로 매수하지 않았으며, 다른 보유 슬롯은 제외하지 않습니다."
-                        )
-                        apply_exclusion = st.form_submit_button(
-                            "확인한 슬롯 1건만 제외", type="primary",
+                    with col_remove:
+                        st.write("")
+                        st.write("")
+                        remove_pressed = st.button(
+                            "🗑️ 선택 삭제",
+                            use_container_width=True,
                             disabled=not portfolio_persistence_enabled(),
+                            key=f"exclude_one_slot_btn_{roster_hash}",
                         )
-                    if apply_exclusion:
+                    if remove_pressed:
                         try:
-                            if date_confirmation.strip() != expected_date or not confirmation:
-                                raise ValueError("슬롯 매수일 확인 또는 미매수 확인이 일치하지 않습니다.")
-                            # Validate immutable ID -> entry date against the live model again.
-                            candidates = [p for p in v9_open_positions
-                                          if v9_position_key(p) == selected_key]
-                            if len(candidates) != 1 or (
-                                pd.Timestamp(candidates[0]["entry_date"]).date().isoformat()
-                                != expected_date
-                            ):
-                                raise ValueError("화면과 실제 슬롯 ID가 일치하지 않습니다. 새로고침 후 다시 선택하세요.")
+                            # Guard against stale selectbox selection or duplicate IDs.
+                            matched = [p for p in v9_open_positions
+                                       if v9_position_key(p) == selected_key]
+                            if len(matched) != 1 or selected_key not in row_by_key:
+                                raise ValueError("현재 표시된 슬롯과 선택한 ID가 일치하지 않습니다. 새로고침 후 다시 시도하세요.")
+                            display_date = str(row_by_key[selected_key]["매수일"])
+                            model_date = pd.Timestamp(matched[0]["entry_date"]).date().isoformat()
+                            if display_date != model_date:
+                                raise ValueError("선택 슬롯의 매수일이 현재 모델과 일치하지 않습니다.")
                             current, status = _load_persisted_v9_state()
                             if status != "GitHub 암호화 저장값 불러옴":
-                                raise ValueError(f"최신 저장 내역을 읽지 못했습니다: {status}")
-                            latest_excluded = set(current["excluded_positions"])
-                            if selected_key in latest_excluded:
-                                raise ValueError("이미 제외된 슬롯입니다. 화면을 새로고침하세요.")
-                            latest_excluded.add(selected_key)
-                            # Preserve EVERY other persisted record and existing actual execution values.
+                                raise ValueError(f"최신 저장 데이터 불러오기 실패: {status}")
+                            excluded = set(current["excluded_positions"])
+                            if selected_key in excluded:
+                                raise ValueError("이미 미매수 처리된 슬롯입니다.")
+                            excluded.add(selected_key)
+                            # Only excluded_positions changes. All actual quantities,
+                            # entry prices and other encrypted records are retained.
                             ok, msg = _save_persisted_v9_state(
                                 quantity_map=current["quantities"],
                                 entry_prices=current["entry_prices"],
-                                cashflows=current["cashflows"],
-                                trade_overrides=current["trade_overrides"],
-                                manual_trades=current["manual_trades"],
-                                settings=current["settings"],
-                                excluded_positions=sorted(latest_excluded),
-                            )
-                            if not ok:
-                                raise ValueError(msg)
-                            st.session_state["v9_quantity_overrides"] = current["quantities"]
-                            st.session_state["v9_entry_price_overrides"] = current["entry_prices"]
-                            st.session_state["v9_excluded_positions"] = sorted(latest_excluded)
-                            st.success(f"{expected_date} / {selected_key} 슬롯 한 건만 제외했습니다.")
-                            st.rerun()
-                        except Exception as exc:
-                            st.error(f"미매수 슬롯 제외 실패: {exc}")
-
-            with st.expander("🛠️ 잘못 삭제된 10월 8일 보유 슬롯 복원", expanded=False):
-                st.caption("GitHub의 암호화된 삭제 전 이력을 읽어 2026-10-08 슬롯 한 건만 복원합니다. "
-                           "입출금·다른 슬롯·거래 내역은 변경하지 않습니다.")
-                recovery_shas = {
-                    "10월 19일 14:29:50 저장본": "7d3163fc044dd052d3da264212eca91b6eecaae3",
-                    "10월 18일 15:35:59 저장본": "4204c339fffd5a45d26b2ba0ec7404ad99081b5f",
-                }
-                recovery_label = st.selectbox("복원 기준 시점", list(recovery_shas),
-                                               key="restore_oct8_snapshot")
-                if st.button("과거 저장본에서 10월 8일 기록 조회", key="preview_oct8_restore"):
-                    try:
-                        historical = _load_persisted_portfolio_revision(recovery_shas[recovery_label])
-                        matching = {v9_position_key(p): p for p in v9_open_positions
-                                    if pd.Timestamp(p["entry_date"]).date().isoformat() == "2026-10-08"}
-                        entries = []
-                        for key, pos in matching.items():
-                            q = historical["quantities"].get(key)
-                            if q is not None and int(q) > 0 and key not in historical["excluded_positions"]:
-                                entries.append({
-                                    "key": key, "quantity": int(q),
-                                    "price": historical["entry_prices"].get(key),
-                                    "date": "2026-10-08",
-                                })
-                        st.session_state["oct8_restore_candidates"] = entries
-                        if not entries:
-                            st.warning("이 저장본에는 10월 8일 실보유 수량이 없습니다. 다른 저장 시점을 선택해 주세요.")
-                    except Exception as exc:
-                        st.error(f"저장본 조회 실패: {exc}")
-                candidates = st.session_state.get("oct8_restore_candidates", [])
-                if candidates:
-                    options = {f"{item['date']} · {item['quantity']}주 · 매수가 "
-                               f"{item['price'] if item['price'] else '기본값'} · ID {item['key']}":
-                               item for item in candidates}
-                    choice = st.selectbox("복원할 실제 슬롯 확인", list(options),
-                                          key="oct8_restore_choice")
-                    chosen = options[choice]
-                    confirm = st.checkbox("선택한 10월 8일 슬롯의 수량과 매수가만 복원합니다",
-                                          key="oct8_restore_confirm")
-                    if st.button("확인한 슬롯 복원 및 암호화 저장", disabled=not confirm,
-                                 type="primary", key="apply_oct8_restore"):
-                        try:
-                            current, load_status = _load_persisted_v9_state()
-                            if load_status != "GitHub 암호화 저장값 불러옴":
-                                raise ValueError(f"최신 저장본 조회 실패: {load_status}")
-                            key = chosen["key"]
-                            quantities = dict(current["quantities"])
-                            entry_prices = dict(current["entry_prices"])
-                            excluded = set(current["excluded_positions"])
-                            quantities[key] = chosen["quantity"]
-                            excluded.discard(key)
-                            if chosen["price"] is not None:
-                                entry_prices[key] = chosen["price"]
-                            else:
-                                entry_prices.pop(key, None)
-                            ok, message = _save_persisted_v9_state(
-                                quantity_map=quantities,
-                                entry_prices=entry_prices,
                                 excluded_positions=sorted(excluded),
                                 cashflows=current["cashflows"],
                                 trade_overrides=current["trade_overrides"],
@@ -5475,15 +5398,14 @@ def render_compact_trading_dashboard():
                                 settings=current["settings"],
                             )
                             if not ok:
-                                raise ValueError(message)
-                            st.session_state["v9_quantity_overrides"] = quantities
-                            st.session_state["v9_entry_price_overrides"] = entry_prices
+                                raise ValueError(msg)
+                            st.session_state["v9_quantity_overrides"] = current["quantities"]
+                            st.session_state["v9_entry_price_overrides"] = current["entry_prices"]
                             st.session_state["v9_excluded_positions"] = sorted(excluded)
-                            st.session_state["oct8_restore_candidates"] = []
-                            st.success("10월 8일 실제 보유 슬롯이 복원되었습니다.")
+                            st.toast(f"{display_date} 슬롯 제외 완료")
                             st.rerun()
                         except Exception as exc:
-                            st.error(f"복원 실패: {exc}")
+                            st.error(f"미매수 슬롯 제외 실패: {exc}")
 
         # 실제 보유수량과 실제 매수체결가는 Open Positions 표에서 직접 수정합니다.
         editor_table = position_table.copy()
