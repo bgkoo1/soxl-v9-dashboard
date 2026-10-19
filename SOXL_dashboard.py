@@ -1084,6 +1084,26 @@ def _load_persisted_v9_state():
         return empty, f"영구 저장 불러오기 실패: {e}"
 
 
+def _load_persisted_portfolio_revision(commit_sha):
+    """Read-only recovery from an encrypted historical GitHub blob. Never publish secrets."""
+    config = _portfolio_persistence_config()
+    if config is None:
+        raise ValueError("GitHub 암호화 저장 연결이 필요합니다.")
+    url = _github_contents_url(config)
+    response = requests.get(url, headers=_github_headers(config),
+                            params={"ref": commit_sha}, timeout=12)
+    response.raise_for_status()
+    item = response.json()
+    decrypted = Fernet(config["key"].encode("utf-8")).decrypt(
+        base64.b64decode(item["content"]))
+    payload = json.loads(decrypted.decode("utf-8"))
+    return {
+        "quantities": dict(payload.get("quantities", {})),
+        "entry_prices": _sanitize_v9_entry_prices(payload.get("entry_prices", {})),
+        "excluded_positions": _sanitize_v9_excluded_positions(payload.get("excluded_positions", [])),
+    }
+
+
 def _save_persisted_v9_state(quantity_map=None, entry_prices=None, cashflows=None, trade_overrides=None, settings=None, manual_trades=None, excluded_positions=None):
     """실제수량·입출금·실제 체결값을 하나의 암호화 파일로 저장합니다."""
     config = _portfolio_persistence_config()
@@ -5306,50 +5326,85 @@ def render_compact_trading_dashboard():
                 _label = f"슬롯 {_slot} · {_date} · {_buy_type} · {_price}"
                 delete_options[_label] = _key
 
+            # Important: live positions are derived dynamically from the model.
+            # A changing selectbox can target a different saved key after a rerun.
+            # Disable destructive deletion until a stable transaction-ledger editor exists.
             if delete_options:
-                st.markdown("**🗑️ 실전 슬롯 관리**")
-                st.caption("실제로 매수하지 않은 자동 생성 슬롯을 선택해 실전 운용 기록에서 삭제할 수 있습니다.")
-                del_c1, del_c2 = st.columns([3, 1])
-                with del_c1:
-                    delete_label = st.selectbox(
-                        "실제로 매수하지 않은 슬롯 선택",
-                        list(delete_options.keys()),
-                        key="delete_unbought_open_position_select",
-                    )
-                with del_c2:
-                    st.write("")
-                    st.write("")
-                    if st.button(
-                        "🗑️ 선택 슬롯 삭제",
-                        use_container_width=True,
-                        key="delete_unbought_open_position_btn",
-                        help="백테스트 전략 기록은 유지하고 실전 운용 기록에서만 해당 매수를 없었던 것으로 처리합니다.",
-                    ):
-                        delete_key = delete_options[delete_label]
-                        merged_map = dict(st.session_state.get("v9_quantity_overrides", {}))
-                        merged_price_map = dict(st.session_state.get("v9_entry_price_overrides", {}))
-                        excluded_set = set(_sanitize_v9_excluded_positions(
-                            st.session_state.get("v9_excluded_positions", [])
-                        ))
-                        # 명시적 삭제: 0주 + 영구 제외 키를 동시에 저장합니다.
-                        merged_map[delete_key] = 0
-                        merged_price_map.pop(delete_key, None)
-                        excluded_set.add(delete_key)
-                        st.session_state["v9_quantity_overrides"] = merged_map
-                        st.session_state["v9_entry_price_overrides"] = merged_price_map
-                        st.session_state["v9_excluded_positions"] = sorted(excluded_set)
-                        ok, msg = save_persisted_v9_open_position_overrides(
-                            merged_map,
-                            merged_price_map,
-                            sorted(excluded_set),
-                        )
-                        st.session_state["v9_quantity_persistence_status"] = msg
-                        st.session_state["v9_quantity_persistence_ok"] = ok
-                        if ok:
-                            st.success("선택한 슬롯을 실전 운용 기록에서 삭제했습니다.")
+                st.info("실전 슬롯 직접 삭제는 안전 점검 중 일시 중단했습니다. 미매수 슬롯은 아래 복원/관리 기능을 이용하세요.")
+
+            with st.expander("🛠️ 잘못 삭제된 10월 8일 보유 슬롯 복원", expanded=False):
+                st.caption("GitHub의 암호화된 삭제 전 이력을 읽어 2026-10-08 슬롯 한 건만 복원합니다. "
+                           "입출금·다른 슬롯·거래 내역은 변경하지 않습니다.")
+                recovery_shas = {
+                    "10월 19일 14:29:50 저장본": "7d3163fc044dd052d3da264212eca91b6eecaae3",
+                    "10월 18일 15:35:59 저장본": "4204c339fffd5a45d26b2ba0ec7404ad99081b5f",
+                }
+                recovery_label = st.selectbox("복원 기준 시점", list(recovery_shas),
+                                               key="restore_oct8_snapshot")
+                if st.button("과거 저장본에서 10월 8일 기록 조회", key="preview_oct8_restore"):
+                    try:
+                        historical = _load_persisted_portfolio_revision(recovery_shas[recovery_label])
+                        matching = {v9_position_key(p): p for p in v9_open_positions
+                                    if pd.Timestamp(p["entry_date"]).date().isoformat() == "2026-10-08"}
+                        entries = []
+                        for key, pos in matching.items():
+                            q = historical["quantities"].get(key)
+                            if q is not None and int(q) > 0 and key not in historical["excluded_positions"]:
+                                entries.append({
+                                    "key": key, "quantity": int(q),
+                                    "price": historical["entry_prices"].get(key),
+                                    "date": "2026-10-08",
+                                })
+                        st.session_state["oct8_restore_candidates"] = entries
+                        if not entries:
+                            st.warning("이 저장본에는 10월 8일 실보유 수량이 없습니다. 다른 저장 시점을 선택해 주세요.")
+                    except Exception as exc:
+                        st.error(f"저장본 조회 실패: {exc}")
+                candidates = st.session_state.get("oct8_restore_candidates", [])
+                if candidates:
+                    options = {f"{item['date']} · {item['quantity']}주 · 매수가 "
+                               f"{item['price'] if item['price'] else '기본값'} · ID {item['key']}":
+                               item for item in candidates}
+                    choice = st.selectbox("복원할 실제 슬롯 확인", list(options),
+                                          key="oct8_restore_choice")
+                    chosen = options[choice]
+                    confirm = st.checkbox("선택한 10월 8일 슬롯의 수량과 매수가만 복원합니다",
+                                          key="oct8_restore_confirm")
+                    if st.button("확인한 슬롯 복원 및 암호화 저장", disabled=not confirm,
+                                 type="primary", key="apply_oct8_restore"):
+                        try:
+                            current, load_status = _load_persisted_v9_state()
+                            if load_status != "GitHub 암호화 저장값 불러옴":
+                                raise ValueError(f"최신 저장본 조회 실패: {load_status}")
+                            key = chosen["key"]
+                            quantities = dict(current["quantities"])
+                            entry_prices = dict(current["entry_prices"])
+                            excluded = set(current["excluded_positions"])
+                            quantities[key] = chosen["quantity"]
+                            excluded.discard(key)
+                            if chosen["price"] is not None:
+                                entry_prices[key] = chosen["price"]
+                            else:
+                                entry_prices.pop(key, None)
+                            ok, message = _save_persisted_v9_state(
+                                quantity_map=quantities,
+                                entry_prices=entry_prices,
+                                excluded_positions=sorted(excluded),
+                                cashflows=current["cashflows"],
+                                trade_overrides=current["trade_overrides"],
+                                manual_trades=current["manual_trades"],
+                                settings=current["settings"],
+                            )
+                            if not ok:
+                                raise ValueError(message)
+                            st.session_state["v9_quantity_overrides"] = quantities
+                            st.session_state["v9_entry_price_overrides"] = entry_prices
+                            st.session_state["v9_excluded_positions"] = sorted(excluded)
+                            st.session_state["oct8_restore_candidates"] = []
+                            st.success("10월 8일 실제 보유 슬롯이 복원되었습니다.")
                             st.rerun()
-                        else:
-                            st.error(msg)
+                        except Exception as exc:
+                            st.error(f"복원 실패: {exc}")
 
         # 실제 보유수량과 실제 매수체결가는 Open Positions 표에서 직접 수정합니다.
         editor_table = position_table.copy()
