@@ -545,6 +545,35 @@ st.markdown(
     div[data-testid="stVerticalBlock"] > div:has(>div[data-testid="stPlotlyChart"]) {
       border-radius:14px;
     }
+
+    /* Redesign v3: match reference layout, without affecting trading mechanics */
+    .stApp {background:#f5f7fc !important;}
+    [data-testid="stSidebar"] {background:#f8faff !important;border-right:1px solid #e4eafa !important;}
+    .block-container {max-width:1900px !important;padding:1.1rem 1.25rem 2rem !important;}
+    .redesign-header {display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+    .redesign-logo{font-size:1.7rem;color:#1460e8;font-weight:900;}
+    .redesign-headline{font-size:1.8rem;font-weight:850;color:#101c36;letter-spacing:-.035em;}
+    .redesign-subline{font-size:.84rem;color:#8291a9;margin-top:2px;}
+    [data-testid="stMetric"] {background:#fff;border:1px solid #e5eaf2;box-shadow:0 2px 10px rgba(29,49,93,.035);border-radius:12px;min-height:122px;padding:14px 12px;}
+    [data-testid="stMetricLabel"]{font-size:.84rem;color:#52607a;font-weight:750;}
+    [data-testid="stMetricValue"]{font-size:clamp(1rem,1.45vw,1.48rem) !important;color:#102143;white-space:nowrap !important;overflow:visible;letter-spacing:-.035em;}
+    [data-testid="stVerticalBlockBorderWrapper"]{border-radius:13px !important;}
+    [data-testid="stVerticalBlockBorderWrapper"] > div {background:#fff !important;}
+    .redesign-nav-title{font-weight:850;font-size:.85rem;color:#8995ab;margin:.35rem 0 .65rem;}
+    .redesign-side-links{display:flex;flex-direction:column;gap:4px;margin:14px 0;}
+    .redesign-side-links a{padding:12px 10px;text-decoration:none;color:#485c7c;border-radius:9px;font-weight:650;font-size:.9rem;}
+    .redesign-side-links a:hover{background:#e8f1ff;color:#185bea;}
+    .redesign-smalltitle{font-size:.82rem;color:#293a58;font-weight:750;margin:7px 0;}
+    .redesign-date{color:#6b7d96;font-size:.74rem;font-weight:500;}
+    .redesign-decision{border-radius:12px;padding:15px 18px;margin:4px 0 12px;min-height:93px;}
+    .redesign-buy{background:linear-gradient(110deg,#cfe2ff,#ebf3ff);}
+    .redesign-wait{background:linear-gradient(110deg,#e8effb,#f4f7fc);}
+    .redesign-decision-title{color:#075ad5;font-size:1.55rem;font-weight:850;}
+    .redesign-decision-info{color:#45678e;font-size:.82rem;margin-top:4px;}
+    .redesign-statusline{display:flex;justify-content:space-around;margin:7px 0 12px;padding:9px;background:#f8faff;border-radius:8px;color:#5f6f84;font-size:.87rem;}
+    .redesign-statusline b{color:#137653;}
+    [data-testid="stSidebar"] [data-testid="stMetric"]{min-height:80px;}
+    @media(max-width:1100px){[data-testid="stMetricValue"]{font-size:1rem !important;}.redesign-headline{font-size:1.3rem;}}
     </style>
     """,
     unsafe_allow_html=True,
@@ -555,8 +584,19 @@ st.markdown(
 # TITLE
 # ============================================================
 
-st.markdown("""<div class="soxl-lead"><div class="soxl-lead-title">SOXL 퀀트투자 대시보드</div><div class="soxl-lead-note">실전 운용 · 전략별 백테스트 · 보유 슬롯 관리</div></div>""", unsafe_allow_html=True)
-st.caption("실전 계좌와 백테스트 Lab은 분리되어 있습니다. 백테스트 설정은 실제 보유 슬롯이나 주문에 반영되지 않습니다.")
+st.markdown("""<div class="redesign-header"><div class="redesign-logo">▥</div><div><div class="redesign-headline">SOXL 퀀트투자 대시보드</div><div class="redesign-subline">실전 운용 · 전략 분석 · 보유 슬롯 관리</div></div></div>""", unsafe_allow_html=True)
+# The controls are created later (once the saved settings have loaded), but displayed here.
+with st.container(border=True):
+    _control_strategy_col, _control_start_col, _control_end_col, _control_refresh_col = st.columns([2.7, 1.5, 1.5, 1.25], gap="small")
+    with _control_strategy_col:
+        _redesign_strategy_placeholder = st.empty()
+    with _control_start_col:
+        _redesign_start_placeholder = st.empty()
+    with _control_end_col:
+        _redesign_end_placeholder = st.empty()
+    with _control_refresh_col:
+        _redesign_refresh_placeholder = st.empty()
+
 
 
 # ============================================================
@@ -3751,15 +3791,20 @@ def render_backtest_lab(full_price_df):
         st.dataframe(pd.DataFrame(settings_rows), use_container_width=True, hide_index=True)
 
 
-app_page = st.radio(
+st.sidebar.markdown("<div class='redesign-nav-title'>메뉴</div>", unsafe_allow_html=True)
+app_page = st.sidebar.radio(
     "화면 선택",
-    ["📈 실전 운용", "🧪 백테스트 Lab"],
-    horizontal=True,
+    ["🏠 대시보드", "📊 백테스트 분석"],
+    key="app_page_mode_redesign",
     label_visibility="collapsed",
-    key="app_page_mode",
 )
-
-if app_page == "🧪 백테스트 Lab":
+st.sidebar.markdown("""<div class="redesign-side-links">
+  <a href="#redesign-order-management">◫ &nbsp; 주문 관리</a>
+  <a href="#redesign-slot-preview">▦ &nbsp; 보유 슬롯</a>
+  <a href="#redesign-performance">▥ &nbsp; 성과 리포트</a>
+  <a href="#redesign-analysis">↗ &nbsp; 심층 분석</a>
+</div>""", unsafe_allow_html=True)
+if app_page == "📊 백테스트 분석":
     render_backtest_lab(full_df)
     st.stop()
 
@@ -3795,9 +3840,11 @@ st.sidebar.metric(
 )
 
 
-if st.sidebar.button(
-    "🔄 최신 데이터 업데이트",
+if _redesign_refresh_placeholder.button(
+    "↻ 데이터 새로고침",
     use_container_width=True,
+    type="primary",
+    key="redesign_refresh",
 ):
 
     try:
@@ -3865,12 +3912,10 @@ saved_initial_capital = max(
     min(10_000_000_000, saved_initial_capital),
 )
 
-st.sidebar.subheader(
-    "⚙️ Strategy(전략) 설정"
-)
+st.sidebar.subheader("⚙️ 운용 설정")
 
-strategy_mode = st.sidebar.radio(
-    "Strategy(전략) 선택",
+strategy_mode = _redesign_strategy_placeholder.selectbox(
+    "전략 선택",
     [
         "V11 Final(D2 -10% + 4일 연속 하락 방어)",
         "V10 Final(V9 + -9% 급락 추가매수)",
@@ -4006,8 +4051,8 @@ if saved_start_raw:
 
 
 start_date = (
-    st.sidebar.date_input(
-        "시작일",
+    _redesign_start_placeholder.date_input(
+        "운용 시작일",
         saved_start_date,
         min_value=
             min_date,
@@ -4050,8 +4095,8 @@ else:
 
 
 end_date = (
-    st.sidebar.date_input(
-        "종료일",
+    _redesign_end_placeholder.date_input(
+        "분석 종료일",
         max_date,
         min_value=
             min_date,
@@ -4698,8 +4743,9 @@ market_analysis = (
 # TODAY'S ACTION + LIVE STATUS
 # ============================================================
 
-st.divider()
-st.subheader("🧭 오늘의 매매 판단 · 계좌 현황")
+
+# Compact order-status rendering lives in the lower left panel; avoid a duplicate heading here.
+
 
 # 행동 문구는 기존 전략 계산 결과를 그대로 사용합니다.
 if next_action.startswith("BUY"):
@@ -5614,1486 +5660,1542 @@ def render_compact_trading_dashboard():
 
 
 # ============================================================
-# FINTECH OVERVIEW (UI-only; all original trade/state code preserved below)
+# PIXEL-INSPIRED FINTECH LAYOUT: read-only overview, original trading actions intact.
 # ============================================================
-st.markdown(
-    f'<div class="soxl-section-line"><span>실전 운용 대시보드</span>'
-    f'<span class="soxl-section-meta">전략: {strategy_short_name.split("(")[0]} · 확정 일봉 {df["Date"].max().date()}</span></div>',
-    unsafe_allow_html=True,
-)
+from html import escape as _html_escape
 
-_nav = float(live_nav)
-_cash = max(0., float(usable_cash))
-_inv = max(0., _nav - _cash)
-_cash_ratio = _cash / _nav if _nav > 0 else 0.
-_inv_ratio = _inv / _nav if _nav > 0 else 0.
-_kpi = st.columns(6, gap="small")
-_kpi[0].metric("💼 실전 총자산", f"{_nav:,.0f}원")
-_kpi[1].metric("📈 백테스트 CAGR", f"{stats['cagr']:.2%}")
-_kpi[2].metric("📉 백테스트 MDD", f"{stats['mdd']:.2%}")
-_kpi[3].metric("💰 현금 비중", f"{_cash_ratio:.1%}", f"{_cash:,.0f}원", delta_color="off")
-_kpi[4].metric("📊 투자 비중", f"{_inv_ratio:.1%}", f"{_inv:,.0f}원", delta_color="off")
-_kpi[5].metric("🗂 보유 슬롯", f"{live_open_count} / {max_slots_for_live}",
-               f"여유 {max(0, max_slots_for_live - live_open_count)}개", delta_color="off")
-st.caption("실전 총자산·현금·슬롯은 현재 실전 정보 / CAGR·MDD는 선택 전략의 백테스트 수치")
+_asset_nav = float(live_nav)
+_asset_cash = float(live_cash)
+_asset_invested = _asset_nav - _asset_cash
+_asset_cash_pct = (_asset_cash / _asset_nav * 100.0) if _asset_nav > 0 else 0.0
+_asset_invest_pct = (_asset_invested / _asset_nav * 100.0) if _asset_nav > 0 else 0.0
+_asset_delta = _asset_nav - float(initial_capital) - float(net_external_cashflow)
+_asset_delta_pct = (_asset_delta / float(initial_capital)) * 100 if initial_capital else 0
+_dashboard_recent = pd.DataFrame()
 
-_chart_col, _side_col = st.columns([1.8, 1], gap="medium")
-with _chart_col:
+st.markdown("<div id='redesign-overview' class='redesign-section-anchor'></div>", unsafe_allow_html=True)
+_cards = st.columns(6, gap="small")
+with _cards[0]:
+    st.metric("🟢 실전 총자산", f"₩{_asset_nav:,.0f}", f"{_asset_delta:+,.0f}원", help="실전 계좌의 확정일봉 기준 NAV. 증권사 잔고와 다를 수 있습니다.")
+with _cards[1]:
+    st.metric("🔵 백테스트 CAGR", f"{stats['cagr']:.2%}", help="선택 전략과 기간에 대한 모형 수익률")
+with _cards[2]:
+    st.metric("🔻 백테스트 MDD", f"{stats['mdd']:.2%}", help="최대 고점 대비 낙폭. 실전 계좌 MDD가 아닙니다.")
+with _cards[3]:
+    st.metric("◕ 현금 비중", f"{_asset_cash_pct:.1f}%", f"₩{_asset_cash:,.0f}", delta_color="off")
+with _cards[4]:
+    st.metric("◕ 투자 비중", f"{_asset_invest_pct:.1f}%", f"₩{_asset_invested:,.0f}", delta_color="off")
+with _cards[5]:
+    st.metric("▦ 보유 슬롯", f"{live_open_count} / {max_slots_for_live}", f"여유 {max(0,max_slots_for_live-live_open_count)}개", delta_color="off")
+
+_left, _right = st.columns([1.65, 1], gap="small")
+with _left:
     with st.container(border=True):
-        st.markdown("##### 📈 누적 자산곡선")
-        _period = st.segmented_control("표시 기간", ["6개월", "1년", "3년", "전체"],
-                                       default="3년", key="soxl_fintech_period", label_visibility="collapsed")
-        _equity = current_result.get("equity", pd.DataFrame())
-        if isinstance(_equity, pd.DataFrame) and not _equity.empty and {"Date","Equity"}.issubset(_equity.columns):
-            _e = _equity[["Date","Equity"]].dropna().copy()
-            _e["Date"] = pd.to_datetime(_e["Date"])
-            _e = _e.sort_values("Date")
-            _cutoffs = {"6개월":pd.DateOffset(months=6),"1년":pd.DateOffset(years=1),"3년":pd.DateOffset(years=3)}
-            if _period in _cutoffs:
-                _e = _e.loc[_e["Date"] >= _e["Date"].max() - _cutoffs[_period]]
+        _title, _filter = st.columns([2.3, 2.4], vertical_alignment="center")
+        _title.markdown("#### 📈 누적 자산곡선")
+        _period = _filter.segmented_control("기간", ["6개월", "1년", "3년", "전체"], default="전체", key="redesign_period", label_visibility="collapsed")
+        _eq = current_result.get("equity", pd.DataFrame()).copy()
+        if not _eq.empty:
+            _eq["Date"] = pd.to_datetime(_eq["Date"])
+            _eq = _eq.sort_values("Date")
+            _slice = {"6개월":pd.DateOffset(months=6), "1년":pd.DateOffset(years=1), "3년":pd.DateOffset(years=3)}
+            if _period in _slice:
+                _eq = _eq.loc[_eq["Date"] >= _eq["Date"].max() - _slice[_period]].copy()
+            # Compare a rebased SOXL buy-and-hold return with the strategy's re-based return.
+            _px = full_df[["Date","Close"]].copy()
+            _px["Date"] = pd.to_datetime(_px["Date"])
+            _px = _px.merge(_eq[["Date"]],on="Date",how="inner").sort_values("Date")
+            if not _px.empty:
+                _eq = _eq.merge(_px,on="Date",how="left")
+            _eq["Strategy_Return"] = 100 * (_eq["Equity"] / float(_eq["Equity"].iloc[0]) - 1)
             _fig = go.Figure()
-            _fig.add_trace(go.Scatter(x=_e["Date"],y=_e["Equity"],mode="lines",
-                name="V11 전략" if strategy_mode.startswith("V11") else strategy_short_name,
-                line=dict(color="#2563eb",width=2.6),
-                fill="tozeroy",fillcolor="rgba(37,99,235,.07)",
-                hovertemplate="%{x|%Y-%m-%d}<br>%{y:,.0f}원<extra></extra>"))
-            _fig.update_layout(height=320, margin=dict(l=6,r=8,t=8,b=8),
-                plot_bgcolor="#ffffff",paper_bgcolor="#ffffff",showlegend=False,
-                xaxis=dict(showgrid=False,title=None),
-                yaxis=dict(gridcolor="#edf1f6",tickformat=",.0f",title=None),
-                hovermode="x unified")
-            st.plotly_chart(_fig,use_container_width=True,config={"displayModeBar":False},key="soxl_fintech_main_chart")
-            _dd = _e["Equity"].astype(float) / _e["Equity"].astype(float).cummax() - 1
-            _ddfig=go.Figure(go.Scatter(x=_e["Date"],y=_dd*100,mode="lines",
-               line=dict(color="#ec5866",width=1.6),fill="tozeroy",
-               fillcolor="rgba(236,88,102,.12)",name="Drawdown"))
-            _ddfig.update_layout(height=115,margin=dict(l=6,r=8,t=4,b=8),
-                plot_bgcolor="#ffffff",paper_bgcolor="#ffffff",showlegend=False,
-                xaxis=dict(showgrid=False,title=None),
-                yaxis=dict(gridcolor="#f1f2f4",ticksuffix="%",title=None))
-            st.caption("고점 대비 하락률 · 표시된 기간 내 기준")
-            st.plotly_chart(_ddfig,use_container_width=True,config={"displayModeBar":False},key="soxl_fintech_dd_chart")
-            st.caption("위 그래프는 백테스트 전략 NAV이며, 실전 계좌 자산 기록과는 구분됩니다.")
+            _fig.add_trace(go.Scatter(x=_eq["Date"],y=_eq["Strategy_Return"],name="퀀트 전략",mode="lines",line=dict(color="#2065F5",width=2.7),fill="tozeroy",fillcolor="rgba(32,101,245,.08)"))
+            if "Close" in _eq.columns and _eq["Close"].notna().all():
+                _eq["SOXL_Return"] = 100 * (_eq["Close"] / float(_eq["Close"].iloc[0]) - 1)
+                _fig.add_trace(go.Scatter(x=_eq["Date"],y=_eq["SOXL_Return"],name="SOXL 단순보유",mode="lines",line=dict(color="#97A4B8",width=1.7)))
+            _fig.update_layout(height=340,margin=dict(l=2,r=5,t=10,b=5),paper_bgcolor="white",plot_bgcolor="white",hovermode="x unified",legend=dict(orientation="h",y=1.12,x=0),xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
+            st.plotly_chart(_fig,use_container_width=True,config={"displayModeBar":False},key="redesign_main_eq")
+            st.markdown("<div class='redesign-smalltitle'>고점 대비 낙폭 (Drawdown)</div>",unsafe_allow_html=True)
+            # For the actual historical drawdown, preserve the HWM of the full backtest.
+            _global_curve = current_result.get("equity",pd.DataFrame()).copy()
+            _global_curve["Date"] = pd.to_datetime(_global_curve["Date"])
+            _global_curve["Drawdown"] = (_global_curve["Equity"]/_global_curve["Equity"].cummax()-1)*100
+            _d = _global_curve[_global_curve["Date"].isin(_eq["Date"])].copy()
+            _dd = go.Figure(go.Scatter(x=_d["Date"],y=_d["Drawdown"],name="Drawdown",mode="lines",line=dict(color="#F04461",width=1.6),fill="tozeroy",fillcolor="rgba(240,68,97,.13)"))
+            _dd.update_layout(height=175,margin=dict(l=2,r=5,t=5,b=3),paper_bgcolor="white",plot_bgcolor="white",showlegend=False,xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
+            st.plotly_chart(_dd,use_container_width=True,config={"displayModeBar":False},key="redesign_drawdown")
+            st.caption("백테스트 자산곡선 · 실전 총자산과 구분. 표시 구간 시작일을 0%로 환산")
         else:
-            st.info("해당 전략의 자산곡선 데이터를 불러올 수 없습니다.")
+            st.info("자산곡선 데이터가 없습니다.")
 
-with _side_col:
+with _right:
     with st.container(border=True):
-        st.markdown("##### 🧭 오늘의 주문 판단")
-        _signal = ("매수 검토" if next_action.startswith("BUY") else
-                   "데이터 확인" if next_action.startswith("CHECK DATA") else "신규매수 대기")
-        _signal_css = ("buy" if next_action.startswith("BUY") else
-                       "danger" if next_action.startswith("CHECK DATA") else "neutral")
-        st.markdown(f'<div class="overview-signal overview-signal-{_signal_css}">'
-                    f'<div class="overview-signal-small">미국 주문일 {action_session.date()}</div>'
-                    f'<div class="overview-signal-title">{_signal}</div>'
-                    f'<div class="overview-signal-desc">{"기본 매수 예상금액 " + format(next_buy_amount,",.0f") + "원" if next_action.startswith("BUY") else "주문 전 확정 일봉과 현재 보유 상태를 확인하세요."}</div></div>',
-                    unsafe_allow_html=True)
-        if strategy_mode.startswith("V11"):
-            _risk1 = "⛔ 유예" if latest_risk_state else "✅ 허용"
-            _risk2 = "⛔ 유예" if v11_pause_now else "✅ 허용"
-            st.caption(f"Risk B: {_risk1}   |   R1: {_risk2} ({v11_down_streak}일 연속 하락)")
-        else:
-            st.caption(f"Risk B: {'유예' if latest_risk_state else '허용'}")
+        st.markdown(f"#### 🎯 오늘의 주문 판단 <span class='redesign-date'>({action_session.date()})</span>",unsafe_allow_html=True)
+        _buy = next_action.startswith("BUY")
+        _label = "매수 검토" if _buy else ("데이터 확인" if next_action.startswith("CHECK DATA") else "신규 매수 대기")
+        _class = "redesign-buy" if _buy else "redesign-wait"
+        st.markdown(f"<div class='redesign-decision {_class}'><div class='redesign-decision-title'>{_label}</div><div class='redesign-decision-info'>{_html_escape(str(next_action))}</div></div>",unsafe_allow_html=True)
+        _r1 = ("유예" if v11_pause_now else "정상") if strategy_mode.startswith("V11") else "V11 전용"
+        _risk = "유예" if latest_risk_state else "정상"
+        st.markdown(f"<div class='redesign-statusline'><span>Risk B <b>{_risk}</b></span><span>R1 <b>{_r1}</b></span></div>",unsafe_allow_html=True)
+        st.metric("예상 기본 매수금액",f"₩{float(next_buy_amount):,.0f}",help="확정 일봉·기존 가용현금 기준. 실제 주문 여부 및 가격은 상세 주문에서 확인")
+        if strategy_mode.startswith(("V10","V11")) and v10_crash_loc_price is not None:
+            st.caption(f"-9% 급락 추가매수 기준가: ${v10_crash_loc_price:,.2f} · 예상 추가금액 {v10_extra_buy_amount:,.0f}원")
     with st.container(border=True):
-        st.markdown("##### 💳 현재 계좌")
-        _account_table = pd.DataFrame([
-          {"구분":"현금","금액":f"{_cash:,.0f}원","비율":f"{_cash_ratio:.1%}"},
-          {"구분":"투자 평가액(추정)","금액":f"{_inv:,.0f}원","비율":f"{_inv_ratio:.1%}"},
-          {"구분":"총자산","금액":f"{_nav:,.0f}원","비율":"100%"},
-        ])
-        st.dataframe(_account_table,hide_index=True,use_container_width=True,
-                     height=143)
-        st.markdown("##### 📦 보유 슬롯 미리보기")
-        if isinstance(open_positions_display,pd.DataFrame) and not open_positions_display.empty:
-            _preview_cols=[c for c in ["슬롯","매수일","매수가","보유수량","상태"]
-                           if c in open_positions_display.columns]
-            if _preview_cols:
-                st.dataframe(open_positions_display[_preview_cols].head(7),
-                    hide_index=True,use_container_width=True,
-                    height=min(268,39*(min(len(open_positions_display),7)+1)))
-            else:
-                st.caption(f"{len(open_positions_display)}개 슬롯이 있습니다. 아래 상세 관리에서 확인하세요.")
+        st.markdown("#### 💳 현재 계좌")
+        _account_cols = st.columns(3,gap="small")
+        _account_cols[0].metric("현금",f"₩{_asset_cash:,.0f}",f"{_asset_cash_pct:.1f}%",delta_color="off")
+        _account_cols[1].metric("투자 평가액",f"₩{_asset_invested:,.0f}",f"{_asset_invest_pct:.1f}%",delta_color="off")
+        _account_cols[2].metric("총자산",f"₩{_asset_nav:,.0f}")
+        st.caption("확정 종가 기준 추정치 · 실시간 평가액과 다를 수 있음")
+    with st.container(border=True):
+        st.markdown("<div id='redesign-slot-preview'></div>",unsafe_allow_html=True)
+        st.markdown("#### ▦ 보유 슬롯 미리보기")
+        _open = open_positions_display.copy() if isinstance(open_positions_display,pd.DataFrame) else pd.DataFrame()
+        if not _open.empty:
+            _columns = [c for c in ["슬롯","매수일","매수가","보유수량","현재 수익률","상태"] if c in _open.columns]
+            _preview = _open[_columns].head(7).copy()
+            if "상태" in _preview.columns:
+                _preview["상태"] = _preview["상태"].astype(str).str.replace("LOC(목표수익 매도) 대기","보유",regex=False).str.replace("MOC(종가 매도) 오늘 예정","오늘 매도",regex=False)
+            st.dataframe(_preview,hide_index=True,use_container_width=True,height=min(318,36*(len(_preview)+1)))
         else:
-            st.caption("현재 보유 슬롯 없음")
-        st.caption("실제 체결가·수량 수정 및 슬롯 제외/복원은 아래 관리 메뉴에서 진행")
+            st.info("현재 보유 슬롯이 없습니다.")
 
-with st.expander("🛠️ 상세 주문 · 슬롯 편집 · 실제 체결가 관리",expanded=False):
-    render_compact_trading_dashboard()
+st.markdown("<div id='redesign-order-management'></div>",unsafe_allow_html=True)
+_bottom_left, _bottom_right = st.columns([1.7,1],gap="small")
+with _bottom_left:
+    with st.container(border=True):
+        st.markdown("#### 📋 상세 주문 · 슬롯 편집 · 실제 체결가 관리")
+        st.caption("실제 체결가 수정, 미매수 제외 및 복원은 이 패널에서 기존과 동일하게 작동합니다.")
+        render_compact_trading_dashboard()
+with _bottom_right:
+    with st.container(border=True):
+        st.markdown("<div id='redesign-performance'></div>",unsafe_allow_html=True)
+        st.markdown("#### 📈 전략 성과 요약 (백테스트)")
+        _p1,_p2 = st.columns(2)
+        _curve = current_result.get("equity",pd.DataFrame())
+        _total_ret = float(_curve["Equity"].iloc[-1]/_curve["Equity"].iloc[0]-1) if len(_curve)>1 else 0
+        _p1.metric("누적 수익률",f"{_total_ret:+.2%}")
+        _p2.metric("CAGR",f"{stats['cagr']:.2%}")
+        _p3,_p4 = st.columns(2)
+        _p3.metric("MDD",f"{stats['mdd']:.2%}")
+        _w = stats.get("win_rate",float("nan"))
+        _p4.metric("거래 승률", f"{float(_w):.2%}" if pd.notna(_w) else "-")
+        _comparisons = [("선택 전략",current_result),("V11",v11_result),("V10",v10_result),("V9",v9_result)]
+        _bar_data=[]
+        for _nm,_res in _comparisons:
+            _eq2=_res.get("equity",pd.DataFrame())
+            if len(_eq2)>1:
+                _bar_data.append((_nm,float(_eq2["Equity"].iloc[-1]/_eq2["Equity"].iloc[0]-1)*100))
+        if _bar_data:
+            _names=[v[0] for v in _bar_data]
+            _vals=[v[1] for v in _bar_data]
+            _bars=go.Figure(go.Bar(y=_names,x=_vals,orientation="h",marker_color=["#2563EB","#A5B4C8","#A5B4C8","#A5B4C8"],text=[f"{v:+.1f}%" for v in _vals],textposition="outside",cliponaxis=False))
+            _bars.update_layout(height=205,margin=dict(l=4,r=46,t=5,b=8),paper_bgcolor="white",plot_bgcolor="white",showlegend=False,xaxis=dict(visible=False),yaxis=dict(autorange="reversed",title=None))
+            st.plotly_chart(_bars,use_container_width=True,config={"displayModeBar":False},key="redesign_compare_bars")
+        st.caption("동일 기간 전략별 백테스트 비교 · 원금 대비 단순 누적수익률")
 
-# ============================================================
-# KPI
-# ============================================================
+st.markdown("<div id='redesign-analysis'></div>",unsafe_allow_html=True)
+with st.expander("↗ 상세 백테스트 분석 · 거래내역 · 연도별 성과", expanded=False):
+    # ============================================================
+    # KPI
+    # ============================================================
 
-st.divider()
-
-st.subheader(
-    f"📊 전략 성과 요약 · {strategy_short_name}"
-)
-
-comparison_name = st.selectbox(
-    "성과 비교 기준",
-    options=comparison_candidates if comparison_candidates else [strategy_short_name],
-    index=(comparison_candidates.index(default_comparison_name) if default_comparison_name in comparison_candidates else 0),
-    help="현재 선택한 전략의 성과를 어떤 전략과 비교할지 선택합니다.",
-)
-comparison_stats = comparison_results[comparison_name]["stats"]
-
-k1, k2, k3, k4 = (
-    st.columns(
-        4
-    )
-)
-
-k1.metric(
-    "최종자산",
-    f"{stats['final_equity']:,.0f}원",
-    delta=f"{stats['final_equity'] - comparison_stats['final_equity']:+,.0f}원",
-)
-
-k2.metric(
-    "연평균 복리수익률(CAGR)",
-    f"{stats['cagr']:.2%}",
-    delta=f"{(stats['cagr'] - comparison_stats['cagr']) * 100:+.2f}%p",
-)
-
-k3.metric(
-    "최대 낙폭(MDD)",
-    f"{stats['mdd']:.2%}",
-    delta=f"{(stats['mdd'] - comparison_stats['mdd']) * 100:+.2f}%p",
-)
-
-k4.metric(
-    "수익·낙폭 효율(Calmar)",
-    f"{stats['calmar']:.3f}",
-    delta=f"{stats['calmar'] - comparison_stats['calmar']:+.3f}",
-)
-
-st.caption(
-    f"비교 기준: {comparison_name} · "
-    "연평균 복리수익률(CAGR)은 전체 투자기간의 성장률을 연 단위 복리수익률로 환산한 값이며, "
-    "최대 낙폭(MDD)은 해당 기간 중 포트폴리오의 최고 자산 대비 가장 크게 하락한 폭입니다. "
-    "수익·낙폭 효율(Calmar)은 연평균 복리수익률을 최대 낙폭의 절댓값으로 나눈 값으로, 높을수록 수익 대비 낙폭이 효율적입니다."
-)
-
-
-# ============================================================
-# TABS
-# ============================================================
-
-st.divider()
-
-
-tab6, tab1, tab2, tab3, tab4, tab5 = (
-    st.tabs(
-        [
-
-            "📋 거래내역",
-
-            "📈 자산곡선",
-
-            "📉 위험 분석",
-
-            "⏱ 보유기간 분석",
-
-            "🌦 시장 상태",
-
-            "📅 연도별 성과",
-
-        ]
-    )
-)
-
-
-# ============================================================
-# TAB 1 EQUITY
-# ============================================================
-
-with tab1:
-
-    st.subheader("전략별 자산곡선 비교")
-    equity_options = list(comparison_results.keys())
-    default_equity_options = [
-        name for name in [
-            "V7 Base(기본 전략)",
-            "V8 장기과매도 약세필터",
-            "V9 Final(약세필터 + 하락추세 방어LOC)",
-            "V10 Final(V9 + -9% 급락 추가매수)",
-        ]
-        if name in equity_options
-    ]
-    if strategy_short_name not in default_equity_options and strategy_short_name in equity_options:
-        default_equity_options.append(strategy_short_name)
-
-    selected_equity_strategies = st.multiselect(
-        "표시할 전략",
-        options=equity_options,
-        default=default_equity_options,
-        help="V7·V8·V9·V10 등 원하는 전략의 자산곡선을 동시에 비교할 수 있습니다.",
-    )
-
-    fig = go.Figure()
-
-    for strategy_name in selected_equity_strategies:
-        result_item = comparison_results[strategy_name]
-        fig.add_trace(
-            go.Scatter(
-                x=result_item["equity"]["Date"],
-                y=result_item["equity"]["Equity"],
-                name=strategy_name,
-            )
-        )
-
-    fig.update_layout(
-        height=550,
-        hovermode="x unified",
-        legend=dict(orientation="h"),
-    )
-
-    fig.update_yaxes(
-        type="log"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-    )
-
-
-# ============================================================
-# TAB 2 RISK
-# ============================================================
-
-with tab2:
+    st.divider()
 
     st.subheader(
-        "Drawdown(고점 대비 하락폭)"
+        f"📊 전략 성과 요약 · {strategy_short_name}"
+    )
+
+    comparison_name = st.selectbox(
+        "성과 비교 기준",
+        options=comparison_candidates if comparison_candidates else [strategy_short_name],
+        index=(comparison_candidates.index(default_comparison_name) if default_comparison_name in comparison_candidates else 0),
+        help="현재 선택한 전략의 성과를 어떤 전략과 비교할지 선택합니다.",
+    )
+    comparison_stats = comparison_results[comparison_name]["stats"]
+
+    k1, k2, k3, k4 = (
+        st.columns(
+            4
+        )
+    )
+
+    k1.metric(
+        "최종자산",
+        f"{stats['final_equity']:,.0f}원",
+        delta=f"{stats['final_equity'] - comparison_stats['final_equity']:+,.0f}원",
+    )
+
+    k2.metric(
+        "연평균 복리수익률(CAGR)",
+        f"{stats['cagr']:.2%}",
+        delta=f"{(stats['cagr'] - comparison_stats['cagr']) * 100:+.2f}%p",
+    )
+
+    k3.metric(
+        "최대 낙폭(MDD)",
+        f"{stats['mdd']:.2%}",
+        delta=f"{(stats['mdd'] - comparison_stats['mdd']) * 100:+.2f}%p",
+    )
+
+    k4.metric(
+        "수익·낙폭 효율(Calmar)",
+        f"{stats['calmar']:.3f}",
+        delta=f"{stats['calmar'] - comparison_stats['calmar']:+.3f}",
+    )
+
+    st.caption(
+        f"비교 기준: {comparison_name} · "
+        "연평균 복리수익률(CAGR)은 전체 투자기간의 성장률을 연 단위 복리수익률로 환산한 값이며, "
+        "최대 낙폭(MDD)은 해당 기간 중 포트폴리오의 최고 자산 대비 가장 크게 하락한 폭입니다. "
+        "수익·낙폭 효율(Calmar)은 연평균 복리수익률을 최대 낙폭의 절댓값으로 나눈 값으로, 높을수록 수익 대비 낙폭이 효율적입니다."
     )
 
 
-    fig = (
-        go.Figure()
+    # ============================================================
+    # TABS
+    # ============================================================
+
+    st.divider()
+
+
+    tab6, tab1, tab2, tab3, tab4, tab5 = (
+        st.tabs(
+            [
+
+                "📋 거래내역",
+
+                "📈 자산곡선",
+
+                "📉 위험 분석",
+
+                "⏱ 보유기간 분석",
+
+                "🌦 시장 상태",
+
+                "📅 연도별 성과",
+
+            ]
+        )
     )
 
 
-    fig.add_trace(
-        go.Scatter(
+    # ============================================================
+    # TAB 1 EQUITY
+    # ============================================================
 
-            x=
-                base_result[
-                    "drawdown"
-                ][
-                    "Date"
-                ],
+    with tab1:
 
-            y=
-                base_result[
-                    "drawdown"
-                ][
-                    "Drawdown"
-                ]
-                * 100,
-
-            name=
+        st.subheader("전략별 자산곡선 비교")
+        equity_options = list(comparison_results.keys())
+        default_equity_options = [
+            name for name in [
                 "V7 Base(기본 전략)",
-
-        )
-    )
-
-
-    fig.add_trace(
-        go.Scatter(
-
-            x=
-                current_result[
-                    "drawdown"
-                ][
-                    "Date"
-                ],
-
-            y=
-                current_result[
-                    "drawdown"
-                ][
-                    "Drawdown"
-                ]
-                * 100,
-
-            name=
-                "Selected(선택 전략)",
-
-        )
-    )
-
-
-    fig.update_layout(
-        height=500
-    )
-
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-    )
-
-
-# ============================================================
-# TAB 3 TIME
-# ============================================================
-
-with tab3:
-
-    time_summary = (
-        time_analysis[
-            "summary"
+                "V8 장기과매도 약세필터",
+                "V9 Final(약세필터 + 하락추세 방어LOC)",
+                "V10 Final(V9 + -9% 급락 추가매수)",
+            ]
+            if name in equity_options
         ]
-    )
+        if strategy_short_name not in default_equity_options and strategy_short_name in equity_options:
+            default_equity_options.append(strategy_short_name)
 
-
-    time_trades = (
-        time_analysis[
-            "trades"
-        ]
-    )
-
-
-    if time_trades.empty:
-
-        st.info(
-            "TIME(기한 만료 매도) 거래가 없습니다."
+        selected_equity_strategies = st.multiselect(
+            "표시할 전략",
+            options=equity_options,
+            default=default_equity_options,
+            help="V7·V8·V9·V10 등 원하는 전략의 자산곡선을 동시에 비교할 수 있습니다.",
         )
 
-    else:
+        fig = go.Figure()
 
-        t1, t2, t3, t4 = (
-            st.columns(
-                4
+        for strategy_name in selected_equity_strategies:
+            result_item = comparison_results[strategy_name]
+            fig.add_trace(
+                go.Scatter(
+                    x=result_item["equity"]["Date"],
+                    y=result_item["equity"]["Equity"],
+                    name=strategy_name,
+                )
             )
+
+        fig.update_layout(
+            height=550,
+            hovermode="x unified",
+            legend=dict(orientation="h"),
+        )
+
+        fig.update_yaxes(
+            type="log"
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
         )
 
 
-        t1.metric(
-            "TIME(기한 만료 매도)",
-            f"{time_summary['count']:,}건"
-        )
+    # ============================================================
+    # TAB 2 RISK
+    # ============================================================
 
-
-        t2.metric(
-            "평균 수익률",
-            f"{time_summary['avg_return']:.2%}"
-        )
-
-
-        t3.metric(
-            "중앙값",
-            f"{time_summary['median_return']:.2%}"
-        )
-
-
-        t4.metric(
-            "전체 손실 중 TIME(기한 만료 매도)",
-            f"{time_summary['loss_share']:.2%}"
-        )
-
+    with tab2:
 
         st.subheader(
-            "TIME(기한 만료 매도) 이후 SOXL 움직임"
+            "Drawdown(고점 대비 하락폭)"
         )
 
 
-        horizon_cols = (
-            st.columns(
-                4
-            )
+        fig = (
+            go.Figure()
         )
 
 
-        for col, h in zip(
-            horizon_cols,
-            [
-                1,
-                3,
-                5,
-                10,
-            ]
-        ):
-
-            avg = (
-                time_summary[
-                    f"forward_{h}_avg"
-                ]
-            )
-
-            positive = (
-                time_summary[
-                    f"forward_{h}_positive"
-                ]
-            )
-
-
-            if avg is not None:
-
-                col.metric(
-
-                    f"{h}일 후 평균",
-
-                    f"{avg:.2%}",
-
-                    delta=
-                        f"상승확률 {positive:.1%}",
-
-                    delta_color=
-                        "off",
-
-                )
-
-
-# ============================================================
-# TAB 4 MARKET V2
-# ============================================================
-
-with tab4:
-
-    st.subheader(
-        "🌦 Market State(시장상태) 분석"
-    )
-
-
-    st.caption(
-        "가격 흐름은 SOXL 종가와 MA5·MA20·MA50 이동평균선으로 확인하고, "
-        "아래에서는 기존과 동일하게 MA200 괴리율과 최근 20거래일 모멘텀별 거래 성과를 분석합니다."
-    )
-
-    # --------------------------------------------------------
-    # PRICE + MA5/20/50 CHART
-    # --------------------------------------------------------
-
-    prices_display = full_df[["Date", "Close"]].copy()
-    prices_display["MA5"] = prices_display["Close"].rolling(5).mean()
-    prices_display["MA20"] = prices_display["Close"].rolling(20).mean()
-    prices_display["MA50"] = prices_display["Close"].rolling(50).mean()
-
-    prices_display = prices_display[
-        (prices_display["Date"].dt.date >= start_date)
-        &
-        (prices_display["Date"].dt.date <= end_date)
-    ].copy()
-
-    if not prices_display.empty:
-        latest_ma_row = prices_display.iloc[-1]
-        ma1, ma2, ma3 = st.columns(3)
-        ma1.metric("5일 이동평균(MA5)", f"${latest_ma_row['MA5']:,.2f}" if pd.notna(latest_ma_row['MA5']) else "-")
-        ma2.metric("20일 이동평균(MA20)", f"${latest_ma_row['MA20']:,.2f}" if pd.notna(latest_ma_row['MA20']) else "-")
-        ma3.metric("50일 이동평균(MA50)", f"${latest_ma_row['MA50']:,.2f}" if pd.notna(latest_ma_row['MA50']) else "-")
-
-        if pd.notna(latest_ma_row["MA5"]) and pd.notna(latest_ma_row["MA20"]) and pd.notna(latest_ma_row["MA50"]):
-            if latest_ma_row["MA5"] < latest_ma_row["MA20"] < latest_ma_row["MA50"]:
-                st.info("현재 이동평균 배열: MA5 < MA20 < MA50 · V9 단기하락추세 방어 LOC 조건에 해당")
-            else:
-                st.caption("현재 이동평균 배열은 V9 단기하락추세 조건(MA5 < MA20 < MA50)에 해당하지 않습니다.")
-
-    fig_price = go.Figure()
-
-    for col_name, display_name in [
-        ("Close", "SOXL 종가"),
-        ("MA5", "5일 이동평균(MA5)"),
-        ("MA20", "20일 이동평균(MA20)"),
-        ("MA50", "50일 이동평균(MA50)"),
-    ]:
-        fig_price.add_trace(
+        fig.add_trace(
             go.Scatter(
-                x=prices_display["Date"],
-                y=prices_display[col_name],
-                name=display_name,
-            )
-        )
 
-    fig_price.update_layout(
-        height=500,
-        hovermode="x unified",
-        legend=dict(orientation="h"),
-    )
-
-    st.plotly_chart(
-        fig_price,
-        use_container_width=True,
-    )
-
-
-    # --------------------------------------------------------
-    # MA GAP
-    # --------------------------------------------------------
-
-    st.divider()
-
-    st.subheader(
-        "① MA200 Gap(200일 이동평균선 괴리율)별 성과"
-    )
-
-
-    ma_summary = (
-        market_analysis[
-            "ma_summary"
-        ]
-    )
-
-
-    ma_display_table = format_regime_table(ma_summary)
-    st.dataframe(
-        ma_display_table,
-        use_container_width=True,
-        hide_index=True,
-        height=min(420, max(220, 36 * (len(ma_display_table) + 1))),
-    )
-
-
-    fig_ma = (
-        go.Figure()
-    )
-
-
-    fig_ma.add_trace(
-        go.Bar(
-
-            x=
-                ma_summary[
-                    "Bucket"
-                ],
-
-            y=
-                ma_summary[
-                    "Avg_Return"
-                ]
-                * 100,
-
-            name=
-                "평균 수익률",
-
-        )
-    )
-
-
-    fig_ma.update_layout(
-
-        height=420,
-
-        xaxis_title=
-            "MA200 괴리율",
-
-        yaxis_title=
-            "평균 거래수익률 (%)",
-
-    )
-
-
-    st.plotly_chart(
-        fig_ma,
-        use_container_width=True,
-    )
-
-
-    # --------------------------------------------------------
-    # MOMENTUM
-    # --------------------------------------------------------
-
-    st.divider()
-
-    st.subheader(
-        "② Momentum 20D(최근 20거래일 수익률)별 성과"
-    )
-
-
-    momentum_summary = (
-        market_analysis[
-            "momentum_summary"
-        ]
-    )
-
-
-    momentum_display_table = format_regime_table(momentum_summary)
-    st.dataframe(
-        momentum_display_table,
-        use_container_width=True,
-        hide_index=True,
-        height=min(420, max(220, 36 * (len(momentum_display_table) + 1))),
-    )
-
-
-    fig_momentum = (
-        go.Figure()
-    )
-
-
-    fig_momentum.add_trace(
-        go.Bar(
-
-            x=
-                momentum_summary[
-                    "Bucket"
-                ],
-
-            y=
-                momentum_summary[
-                    "Avg_Return"
-                ]
-                * 100,
-
-            name=
-                "평균 수익률",
-
-        )
-    )
-
-
-    fig_momentum.update_layout(
-
-        height=420,
-
-        xaxis_title=
-            "최근 20일 수익률",
-
-        yaxis_title=
-            "평균 거래수익률 (%)",
-
-    )
-
-
-    st.plotly_chart(
-        fig_momentum,
-        use_container_width=True,
-    )
-
-
-    # --------------------------------------------------------
-    # COMBINATION
-    # --------------------------------------------------------
-
-    st.divider()
-
-    st.subheader(
-        "③ MA200 Gap(괴리율) × Momentum 20D(20일 수익률)"
-    )
-
-
-    metric_option = (
-        st.selectbox(
-
-            "조합표 표시 지표",
-
-            [
-                "평균 수익률",
-                "승률",
-                "목표가 매도 비율(LOC)",
-                "기한만료 매도 비율(TIME)",
-                "손익 효율(PF)",
-                "거래수",
-            ],
-
-        )
-    )
-
-
-    metric_map = {
-
-        "평균 수익률":
-            "Avg_Return",
-
-        "승률":
-            "Win_Rate",
-
-        "목표가 매도 비율(LOC)":
-            "Target_Rate",
-
-        "기한만료 매도 비율(TIME)":
-            "Time_Rate",
-
-        "손익 효율(PF)":
-            "Profit_Factor",
-
-        "거래수":
-            "Trades",
-
-    }
-
-
-    metric_col = (
-        metric_map[
-            metric_option
-        ]
-    )
-
-
-    combo = (
-        market_analysis[
-            "combo_summary"
-        ]
-    )
-
-
-    heatmap_df = (
-        combo.pivot(
-
-            index=
-                "MA200_Bucket",
-
-            columns=
-                "Momentum_Bucket",
-
-            values=
-                metric_col,
-
-        )
-    )
-
-
-    heatmap_df = (
-        heatmap_df.reindex(
-
-            index=
-                market_analysis[
-                    "ma_labels"
-                ],
-
-            columns=
-                market_analysis[
-                    "momentum_labels"
-                ],
-
-        )
-    )
-
-
-    heatmap_values = (
-        heatmap_df.copy()
-    )
-
-
-    if metric_col in [
-
-        "Avg_Return",
-
-        "Win_Rate",
-
-        "Target_Rate",
-
-        "Time_Rate",
-
-    ]:
-
-        heatmap_values = (
-            heatmap_values
-            * 100
-        )
-
-
-        value_suffix = "%"
-
-    else:
-
-        value_suffix = ""
-
-
-    fig_heat = (
-        go.Figure(
-
-            data=
-                go.Heatmap(
-
-                    z=
-                        heatmap_values.values,
-
-                    x=
-                        heatmap_values.columns,
-
-                    y=
-                        heatmap_values.index,
-
-                    text=
-                        heatmap_values.round(
-                            2
-                        ).astype(
-                            str
-                        )
-                        + value_suffix,
-
-                    texttemplate=
-                        "%{text}",
-
-                    hovertemplate=(
-                        "MA200: %{y}<br>"
-                        "20일 모멘텀: %{x}<br>"
-                        f"{metric_option}: "
-                        "%{text}"
-                        "<extra></extra>"
-                    ),
-
-                )
-
-        )
-    )
-
-
-    fig_heat.update_layout(
-
-        height=520,
-
-        xaxis_title=
-            "최근 20거래일 모멘텀",
-
-        yaxis_title=
-            "MA200 괴리율",
-
-    )
-
-
-    st.plotly_chart(
-        fig_heat,
-        use_container_width=True,
-    )
-
-
-    # --------------------------------------------------------
-    # COMBO DETAIL
-    # --------------------------------------------------------
-
-    st.subheader(
-        "조합별 상세 성과"
-    )
-
-
-    combo_display = (
-        combo[
-            combo[
-                "Trades"
-            ] > 0
-        ]
-        .copy()
-    )
-
-
-    combo_display[
-        "평균 수익률"
-    ] = (
-        combo_display[
-            "Avg_Return"
-        ]
-        .map(
-            lambda x:
-                f"{x:.2%}"
-        )
-    )
-
-
-    combo_display[
-        "승률"
-    ] = (
-        combo_display[
-            "Win_Rate"
-        ]
-        .map(
-            lambda x:
-                f"{x:.2%}"
-        )
-    )
-
-
-    combo_display[
-        "LOC율"
-    ] = (
-        combo_display[
-            "Target_Rate"
-        ]
-        .map(
-            lambda x:
-                f"{x:.2%}"
-        )
-    )
-
-
-    combo_display[
-        "TIME율"
-    ] = (
-        combo_display[
-            "Time_Rate"
-        ]
-        .map(
-            lambda x:
-                f"{x:.2%}"
-        )
-    )
-
-
-    combo_display[
-        "PF"
-    ] = (
-        combo_display[
-            "Profit_Factor"
-        ]
-        .map(
-
-            lambda x:
-                (
-                    "∞"
-                    if x == float("inf")
-                    else f"{x:.2f}"
-                )
-                if pd.notna(x)
-                else "-"
-
-        )
-    )
-
-
-    combo_display = (
-        combo_display[
-            [
-                "MA200_Bucket",
-                "Momentum_Bucket",
-                "Trades",
-                "평균 수익률",
-                "승률",
-                "LOC율",
-                "TIME율",
-                "PF",
-            ]
-        ]
-    )
-
-
-    combo_display.columns = [
-
-        "MA200 괴리율",
-
-        "20일 모멘텀",
-
-        "거래수",
-
-        "평균 수익률",
-
-        "승률",
-
-        "목표가 매도 비율(LOC)",
-
-        "기한만료 매도 비율(TIME)",
-
-        "손익 효율(PF)",
-
-    ]
-
-
-    st.dataframe(
-        combo_display,
-        use_container_width=True,
-        hide_index=True,
-        height=min(560, max(260, 36 * (len(combo_display) + 1))),
-    )
-
-
-    # --------------------------------------------------------
-    # RAW DATA DOWNLOAD
-    # --------------------------------------------------------
-
-    market_csv = (
-        market_analysis[
-            "trades"
-        ]
-        .to_csv(
-            index=False
-        )
-        .encode(
-            "utf-8-sig"
-        )
-    )
-
-
-    st.download_button(
-
-        "📥 시장상태 분석 거래내역 다운로드",
-
-        data=
-            market_csv,
-
-        file_name=
-            "SOXL_market_regime_analysis.csv",
-
-        mime=
-            "text/csv",
-
-    )
-
-
-# ============================================================
-# TAB 5 YEARLY
-# ============================================================
-
-with tab5:
-
-    yearly = (
-        current_result[
-            "yearly"
-        ]
-        .copy()
-    )
-
-
-    yearly_display = (
-        pd.DataFrame(
-            {
-
-                "연도":
-                    yearly[
-                        "Year"
+                x=
+                    base_result[
+                        "drawdown"
+                    ][
+                        "Date"
                     ],
 
-                "수익률":
-                    yearly[
-                        "Year_Return"
+                y=
+                    base_result[
+                        "drawdown"
+                    ][
+                        "Drawdown"
                     ]
-                    .map(
-                        lambda x:
-                            f"{x:.2%}"
-                    ),
+                    * 100,
 
-                "연중 최대 낙폭":
-                    yearly[
-                        "Year_MDD"
-                    ]
-                    .map(
-                        lambda x:
-                            f"{x:.2%}"
-                    ),
+                name=
+                    "V7 Base(기본 전략)",
 
-                "연말자산":
-                    yearly[
-                        "Year_End_Equity"
-                    ]
-                    .map(
-                        lambda x:
-                            f"{x:,.0f}원"
-                    ),
-
-            }
+            )
         )
-    )
 
 
-    st.caption(
-        "연중 최대 낙폭은 각 연도 안에서 기록한 최고 포트폴리오 자산 대비 이후 가장 크게 하락한 폭입니다. "
-        "주가 자체의 낙폭이 아니라 전략 자산가치 기준이며, 매년 새로 계산됩니다."
-    )
+        fig.add_trace(
+            go.Scatter(
 
+                x=
+                    current_result[
+                        "drawdown"
+                    ][
+                        "Date"
+                    ],
 
-    st.dataframe(
-        yearly_display,
-        use_container_width=True,
-        hide_index=True,
-        height=min(520, max(220, 36 * (len(yearly_display) + 1))),
-    )
+                y=
+                    current_result[
+                        "drawdown"
+                    ][
+                        "Drawdown"
+                    ]
+                    * 100,
 
+                name=
+                    "Selected(선택 전략)",
 
-# ============================================================
-# TAB 6 TRADES
-# ============================================================
-
-with tab6:
-
-    if strategy_mode.startswith(("V9", "V10", "V11")):
-        st.subheader("📋 실제 거래내역(Actual Trades)")
-
-        with st.expander("➕ 수동 거래 추가 / 구글시트 기록 가져오기"):
-            st.caption(
-                "전략 백테스트에 존재하지 않는 실제 청산거래를 추가할 수 있습니다. "
-                "기존 전략 거래와 동일한 거래를 다시 추가하면 NAV 손익이 이중 반영될 수 있습니다."
             )
-            mc1, mc2 = st.columns(2)
-            manual_entry_date = mc1.date_input("매수일", value=start_date, key="manual_trade_entry_date")
-            manual_exit_date = mc2.date_input("매도일", value=min(max_date, date.today()), key="manual_trade_exit_date")
-            mp1, mp2, mp3 = st.columns(3)
-            manual_entry_price = mp1.number_input("매수가($)", min_value=0.01, value=1.00, step=0.01, key="manual_trade_entry_price")
-            manual_exit_price = mp2.number_input("매도가($)", min_value=0.01, value=1.00, step=0.01, key="manual_trade_exit_price")
-            manual_qty = mp3.number_input("수량(주)", min_value=1, value=1, step=1, key="manual_trade_qty")
-            ms1, ms2 = st.columns(2)
-            manual_strategy = ms1.selectbox(
-                "매도전략",
-                ["일반 LOC(+2.7%)", "방어 LOC(+$0.10)", "TIME/MOC", "수동 매도", "기타"],
-                index=3,
-                key="manual_trade_strategy",
-            )
-            manual_affect_nav = ms2.checkbox(
-                "실전 NAV에 손익 반영",
-                value=True,
-                key="manual_trade_affect_nav",
-                help="과거 실제 운용손익을 현재 실전 NAV에 이어서 반영하려면 체크합니다.",
-            )
-            manual_note = st.text_input("메모(선택)", key="manual_trade_note")
-            if st.button("➕ 거래 1건 추가", use_container_width=True, key="add_manual_trade"):
-                if manual_exit_date < manual_entry_date:
-                    st.error("매도일은 매수일보다 빠를 수 없습니다.")
-                else:
-                    new_item = {
-                        "id": uuid.uuid4().hex,
-                        "entry_date": pd.Timestamp(manual_entry_date).date().isoformat(),
-                        "exit_date": pd.Timestamp(manual_exit_date).date().isoformat(),
-                        "entry_price": float(manual_entry_price),
-                        "exit_price": float(manual_exit_price),
-                        "quantity": int(manual_qty),
-                        "exit_strategy": manual_strategy,
-                        "note": manual_note,
-                        "affect_nav": bool(manual_affect_nav),
-                    }
-                    updated_manual = _sanitize_v9_manual_trades(
-                        st.session_state.get("v9_manual_trades", []) + [new_item]
-                    )
-                    ok, msg = save_persisted_v9_manual_trades(updated_manual)
-                    if ok:
-                        st.rerun()
-                    else:
-                        st.error(msg)
+        )
 
-            st.divider()
-            st.markdown("**구글시트 → CSV 일괄 가져오기**")
-            template_df = pd.DataFrame([{
-                "매수일": "2026-01-02",
-                "매도일": "2026-01-09",
-                "매수가($)": 30.50,
-                "매도가($)": 31.20,
-                "수량(주)": 10,
-                "매도전략": "수동 매도",
-                "메모": "기존 구글시트 기록",
-                "NAV반영": True,
-            }])
-            st.download_button(
-                "CSV 양식 다운로드",
-                data=template_df.to_csv(index=False).encode("utf-8-sig"),
-                file_name="SOXL_manual_trades_template.csv",
-                mime="text/csv",
-                use_container_width=True,
-                key="download_manual_template",
-            )
-            manual_csv = st.file_uploader(
-                "구글시트에서 CSV로 내려받은 파일",
-                type=["csv"],
-                key="manual_trade_csv_upload",
-            )
-            if manual_csv is not None:
-                try:
-                    imported = pd.read_csv(manual_csv)
-                    required_cols = ["매수일", "매도일", "매수가($)", "매도가($)", "수량(주)"]
-                    missing_cols = [c for c in required_cols if c not in imported.columns]
-                    if missing_cols:
-                        st.error("필수 열이 없습니다: " + ", ".join(missing_cols))
-                    else:
-                        preview_cols = [c for c in ["매수일", "매도일", "매수가($)", "매도가($)", "수량(주)", "매도전략", "메모", "NAV반영"] if c in imported.columns]
-                        st.dataframe(imported[preview_cols].head(20), use_container_width=True, hide_index=True)
-                        if st.button("📥 CSV 거래내역 가져오기", use_container_width=True, key="import_manual_trades_csv"):
-                            new_rows = []
-                            for _, r in imported.iterrows():
-                                strategy_value = str(r.get("매도전략", "수동 매도")).strip()
-                                nav_raw = r.get("NAV반영", True)
-                                if isinstance(nav_raw, str):
-                                    affect_nav = nav_raw.strip().lower() not in {"false", "0", "no", "n", "아니오", "미반영"}
-                                else:
-                                    affect_nav = bool(nav_raw) if pd.notna(nav_raw) else True
-                                new_rows.append({
-                                    "id": uuid.uuid4().hex,
-                                    "entry_date": r["매수일"],
-                                    "exit_date": r["매도일"],
-                                    "entry_price": r["매수가($)"],
-                                    "exit_price": r["매도가($)"],
-                                    "quantity": r["수량(주)"],
-                                    "exit_strategy": strategy_value,
-                                    "note": str(r.get("메모", "")) if pd.notna(r.get("메모", "")) else "",
-                                    "affect_nav": affect_nav,
-                                })
-                            before = len(st.session_state.get("v9_manual_trades", []))
-                            merged_manual = _sanitize_v9_manual_trades(
-                                st.session_state.get("v9_manual_trades", []) + new_rows
-                            )
-                            added = len(merged_manual) - before
-                            ok, msg = save_persisted_v9_manual_trades(merged_manual)
-                            if ok:
-                                st.success(f"{added:,}건을 가져왔습니다.")
-                                st.rerun()
-                            else:
-                                st.error(msg)
-                except Exception as e:
-                    st.error(f"CSV 읽기 실패: {e}")
 
-            current_manual = _sanitize_v9_manual_trades(st.session_state.get("v9_manual_trades", []))
-            if current_manual:
-                st.divider()
-                st.markdown(f"**현재 수동 추가 거래: {len(current_manual):,}건**")
-                manual_options = {
-                    f"{x['entry_date']} → {x['exit_date']} | {x['quantity']}주 | {x['entry_price']:.2f}→{x['exit_price']:.2f} | {x.get('note','')}": x["id"]
-                    for x in reversed(current_manual)
-                }
-                delete_manual_label = st.selectbox(
-                    "삭제할 수동 거래",
-                    list(manual_options.keys()),
-                    key="delete_manual_trade_select",
+        fig.update_layout(
+            height=500
+        )
+
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+        )
+
+
+    # ============================================================
+    # TAB 3 TIME
+    # ============================================================
+
+    with tab3:
+
+        time_summary = (
+            time_analysis[
+                "summary"
+            ]
+        )
+
+
+        time_trades = (
+            time_analysis[
+                "trades"
+            ]
+        )
+
+
+        if time_trades.empty:
+
+            st.info(
+                "TIME(기한 만료 매도) 거래가 없습니다."
+            )
+
+        else:
+
+            t1, t2, t3, t4 = (
+                st.columns(
+                    4
                 )
-                if st.button("🗑️ 선택 거래 삭제", use_container_width=True, key="delete_manual_trade"):
-                    delete_manual_id = manual_options[delete_manual_label]
-                    remaining_manual = [x for x in current_manual if x["id"] != delete_manual_id]
-                    ok, msg = save_persisted_v9_manual_trades(remaining_manual)
-                    if ok:
-                        st.rerun()
-                    else:
-                        st.error(msg)
+            )
+
+
+            t1.metric(
+                "TIME(기한 만료 매도)",
+                f"{time_summary['count']:,}건"
+            )
+
+
+            t2.metric(
+                "평균 수익률",
+                f"{time_summary['avg_return']:.2%}"
+            )
+
+
+            t3.metric(
+                "중앙값",
+                f"{time_summary['median_return']:.2%}"
+            )
+
+
+            t4.metric(
+                "전체 손실 중 TIME(기한 만료 매도)",
+                f"{time_summary['loss_share']:.2%}"
+            )
+
+
+            st.subheader(
+                "TIME(기한 만료 매도) 이후 SOXL 움직임"
+            )
+
+
+            horizon_cols = (
+                st.columns(
+                    4
+                )
+            )
+
+
+            for col, h in zip(
+                horizon_cols,
+                [
+                    1,
+                    3,
+                    5,
+                    10,
+                ]
+            ):
+
+                avg = (
+                    time_summary[
+                        f"forward_{h}_avg"
+                    ]
+                )
+
+                positive = (
+                    time_summary[
+                        f"forward_{h}_positive"
+                    ]
+                )
+
+
+                if avg is not None:
+
+                    col.metric(
+
+                        f"{h}일 후 평균",
+
+                        f"{avg:.2%}",
+
+                        delta=
+                            f"상승확률 {positive:.1%}",
+
+                        delta_color=
+                            "off",
+
+                    )
+
+
+    # ============================================================
+    # TAB 4 MARKET V2
+    # ============================================================
+
+    with tab4:
+
+        st.subheader(
+            "🌦 Market State(시장상태) 분석"
+        )
+
 
         st.caption(
-            "전략 체결값이 기본으로 입력되어 있으며, 실제 매매가 달랐던 거래만 날짜·가격·수량·매도전략을 수정해 저장할 수 있습니다. "
-            "저장한 실제 체결 손익은 실전 현금·총자산(NAV)·다음 매수금액에 반영되지만, 전략 백테스트의 연평균 복리수익률(CAGR)·최대 낙폭(MDD)에는 영향을 주지 않습니다."
+            "가격 흐름은 SOXL 종가와 MA5·MA20·MA50 이동평균선으로 확인하고, "
+            "아래에서는 기존과 동일하게 MA200 괴리율과 최근 20거래일 모멘텀별 거래 성과를 분석합니다."
         )
 
-        if "v9_trade_overrides" not in st.session_state:
-            loaded_trade_overrides, trade_override_status = load_persisted_v9_trade_overrides()
-            st.session_state["v9_trade_overrides"] = loaded_trade_overrides
-            st.session_state["v9_trade_persistence_status"] = trade_override_status
+        # --------------------------------------------------------
+        # PRICE + MA5/20/50 CHART
+        # --------------------------------------------------------
 
-        trade_overrides_for_editor = _sanitize_v9_trade_overrides(
-            st.session_state.get("v9_trade_overrides", {})
-        )
-        qty_map_for_trades = dict(st.session_state.get("v9_quantity_overrides", {}))
+        prices_display = full_df[["Date", "Close"]].copy()
+        prices_display["MA5"] = prices_display["Close"].rolling(5).mean()
+        prices_display["MA20"] = prices_display["Close"].rolling(20).mean()
+        prices_display["MA50"] = prices_display["Close"].rolling(50).mean()
 
-        if trades.empty:
-            st.info("표시할 청산 거래가 없습니다.")
-        else:
-            trade_model_dates = pd.to_datetime(trades["Entry_Date"], errors="coerce").dropna()
-            override_entry_dates = []
-            for item in trade_overrides_for_editor.values():
-                try:
-                    override_entry_dates.append(pd.Timestamp(item.get("entry_date")))
-                except Exception:
-                    pass
+        prices_display = prices_display[
+            (prices_display["Date"].dt.date >= start_date)
+            &
+            (prices_display["Date"].dt.date <= end_date)
+        ].copy()
 
-            if not trade_model_dates.empty:
-                fx_start = min(override_entry_dates + [trade_model_dates.min()]) if override_entry_dates else trade_model_dates.min()
-                fx_end = max(override_entry_dates + [trade_model_dates.max()]) if override_entry_dates else trade_model_dates.max()
-                trades_fx_daily = get_usdkrw_daily_rates(fx_start, fx_end)
-            else:
-                trades_fx_daily = pd.DataFrame(columns=["Date", "USD_KRW"])
+        if not prices_display.empty:
+            latest_ma_row = prices_display.iloc[-1]
+            ma1, ma2, ma3 = st.columns(3)
+            ma1.metric("5일 이동평균(MA5)", f"${latest_ma_row['MA5']:,.2f}" if pd.notna(latest_ma_row['MA5']) else "-")
+            ma2.metric("20일 이동평균(MA20)", f"${latest_ma_row['MA20']:,.2f}" if pd.notna(latest_ma_row['MA20']) else "-")
+            ma3.metric("50일 이동평균(MA50)", f"${latest_ma_row['MA50']:,.2f}" if pd.notna(latest_ma_row['MA50']) else "-")
 
-            actual_records_all = build_v9_actual_trade_records(
-                trades,
-                qty_overrides=qty_map_for_trades,
-                trade_overrides=trade_overrides_for_editor,
-                fx_daily=trades_fx_daily,
-                fallback_fx=portfolio_fallback_fx,
-                excluded_positions=st.session_state.get("v9_excluded_positions", []),
-            )
-            manual_for_editor = _sanitize_v9_manual_trades(st.session_state.get("v9_manual_trades", []))
-            if manual_for_editor:
-                manual_entry_dates = [pd.Timestamp(x["entry_date"]) for x in manual_for_editor]
-                manual_fx_daily = get_usdkrw_daily_rates(min(manual_entry_dates), max(manual_entry_dates)) if manual_entry_dates else trades_fx_daily
-                manual_records = build_v9_manual_trade_records(
-                    manual_for_editor,
-                    fx_daily=manual_fx_daily,
-                    fallback_fx=portfolio_fallback_fx,
-                )
-                if not manual_records.empty:
-                    actual_records_all = pd.concat([actual_records_all, manual_records], ignore_index=True, sort=False)
-
-            # 실제 거래내역에서 바로 확인할 수 있는 핵심 결과만 요약합니다.
-            # 아래 편집표와 같은 데이터를 다시 표 형태로 반복 표시하지 않습니다.
-            actual_profit_series = pd.to_numeric(
-                actual_records_all.get("손익(원)", pd.Series(dtype=float)),
-                errors="coerce",
-            )
-            actual_return_series = pd.to_numeric(
-                actual_records_all.get("수익률", pd.Series(dtype=float)),
-                errors="coerce",
-            )
-            valid_profit = actual_profit_series.dropna()
-            valid_return = actual_return_series.dropna()
-            actual_total_profit = float(valid_profit.sum()) if not valid_profit.empty else 0.0
-            actual_win_rate = (
-                float((valid_profit > 0).mean())
-                if not valid_profit.empty
-                else float("nan")
-            )
-            actual_avg_return = (
-                float(valid_return.mean())
-                if not valid_return.empty
-                else float("nan")
-            )
-            actual_trade_count = int(len(actual_records_all))
-
-            ak1, ak2, ak3, ak4 = st.columns(4)
-            ak1.metric("누적 실제 손익", f"{actual_total_profit:+,.0f}원")
-            ak2.metric(
-                "실제 거래 승률",
-                f"{actual_win_rate:.2%}" if pd.notna(actual_win_rate) else "-",
-            )
-            ak3.metric(
-                "평균 실제 수익률",
-                f"{actual_avg_return:.2%}" if pd.notna(actual_avg_return) else "-",
-            )
-            ak4.metric("총 거래건수", f"{actual_trade_count:,}건")
-
-            view_options = ["최근 30건", "최근 100건", "전체"]
-            view_choice = st.selectbox(
-                "표시 범위",
-                view_options,
-                index=1,
-                key="v9_actual_trade_view_range",
-                label_visibility="collapsed",
-            )
-
-            actual_records = actual_records_all.sort_values(
-                ["매도일", "매수일"], ascending=[False, False]
-            )
-            if view_choice == "최근 30건":
-                actual_records = actual_records.head(30)
-            elif view_choice == "최근 100건":
-                actual_records = actual_records.head(100)
-
-            actual_records["구분"] = actual_records.get("_source", "strategy").map({"strategy": "전략연결", "manual": "수동추가"}).fillna("전략연결")
-            editor_cols = [
-                "구분", "매수유형", "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
-                "매도전략", "투자금(원)", "수익률", "손익(원)", "수정",
-            ]
-            editor_df = actual_records.set_index("_key")[editor_cols].copy()
-            editor_df["투자금(원)"] = editor_df["투자금(원)"].map(
-                lambda x: f"{x:,.0f}원" if pd.notna(x) else "환율 조회 필요"
-            )
-            editor_df["수익률"] = editor_df["수익률"].map(
-                lambda x: f"{x:.2%}" if pd.notna(x) else "계산 불가"
-            )
-            editor_df["손익(원)"] = editor_df["손익(원)"].map(
-                lambda x: f"{x:+,.0f}원" if pd.notna(x) else "환율 조회 필요"
-            )
-
-            editor_height = min(700, max(280, 42 * (len(editor_df) + 1)))
-            edited_trades = st.data_editor(
-                editor_df,
-                use_container_width=True,
-                hide_index=True,
-                height=editor_height,
-                row_height=38,
-                disabled=["구분", "매수유형", "투자금(원)", "수익률", "손익(원)", "수정"],
-                column_config={
-                    "구분": st.column_config.TextColumn("구분", width="small"),
-                    "매수유형": st.column_config.TextColumn("매수유형", width="medium"),
-                    "매수일": st.column_config.DateColumn("✏️ 매수일", format="YYYY-MM-DD", width="small"),
-                    "매도일": st.column_config.DateColumn("✏️ 매도일", format="YYYY-MM-DD", width="small"),
-                    "매수가($)": st.column_config.NumberColumn("✏️ 매수가", min_value=0.01, step=0.01, format="$%.2f", width="small"),
-                    "매도가($)": st.column_config.NumberColumn("✏️ 매도가", min_value=0.01, step=0.01, format="$%.2f", width="small"),
-                    "수량(주)": st.column_config.NumberColumn("✏️ 수량", min_value=1, step=1, format="%d주", width="small"),
-                    "매도전략": st.column_config.SelectboxColumn(
-                        "✏️ 실제 매도전략",
-                        options=[
-                            "일반 LOC(+2.7%)",
-                            "방어 LOC(+$0.10)",
-                            "TIME/MOC",
-                            "수동 매도",
-                            "기타",
-                        ],
-                        width="medium",
-                    ),
-                    "투자금(원)": st.column_config.TextColumn("투자금", width="medium"),
-                    "수익률": st.column_config.TextColumn("수익률", width="small"),
-                    "손익(원)": st.column_config.TextColumn("손익", width="medium"),
-                    "수정": st.column_config.TextColumn("상태", width="small"),
-                },
-                key="v9_actual_trades_editor",
-            )
-
-            st.caption("가격·수량을 수정한 뒤 저장하면 표가 다시 계산되어 투자금·수익률·손익이 갱신됩니다.")
-
-            save_col, reset_col = st.columns(2)
-
-            if save_col.button(
-                "💾 실제 거래 변경 저장",
-                use_container_width=True,
-                key="save_v9_actual_trades",
-            ):
-                baseline = actual_records_all.set_index("_key")
-                displayed_keys = set(editor_df.index.astype(str))
-                new_overrides = {
-                    k: v for k, v in trade_overrides_for_editor.items()
-                    if k not in displayed_keys
-                }
-                updated_qty_map = dict(qty_map_for_trades)
-                validation_error = None
-
-                for key, row in edited_trades.iterrows():
-                    key = str(key)
-                    if key not in baseline.index:
-                        continue
-                    base = baseline.loc[key]
-                    try:
-                        actual_entry_date = pd.Timestamp(row["매수일"]).date()
-                        actual_exit_date = pd.Timestamp(row["매도일"]).date()
-                        actual_entry_price = float(row["매수가($)"])
-                        actual_exit_price = float(row["매도가($)"])
-                        actual_qty = max(1, int(round(float(row["수량(주)"]))))
-                        actual_strategy = str(row["매도전략"])
-                    except Exception:
-                        validation_error = "날짜·가격·수량 입력값을 확인해주세요."
-                        break
-
-                    if actual_exit_date < actual_entry_date:
-                        validation_error = f"{actual_entry_date} 거래의 매도일이 매수일보다 빠릅니다."
-                        break
-                    if actual_entry_price <= 0 or actual_exit_price <= 0:
-                        validation_error = "매수가와 매도가는 0보다 커야 합니다."
-                        break
-
-                    if str(base.get("_source", "strategy")) == "manual":
-                        manual_id = str(base.get("_manual_id"))
-                        for manual_item in manual_for_editor:
-                            if manual_item["id"] == manual_id:
-                                manual_item.update({
-                                    "entry_date": actual_entry_date.isoformat(),
-                                    "exit_date": actual_exit_date.isoformat(),
-                                    "entry_price": actual_entry_price,
-                                    "exit_price": actual_exit_price,
-                                    "quantity": actual_qty,
-                                    "exit_strategy": actual_strategy,
-                                })
-                                break
-                        continue
-
-                    strategy_entry_date = pd.Timestamp(base["전략 매수일"]).date()
-                    strategy_exit_date = pd.Timestamp(base["전략 매도일"]).date()
-                    strategy_entry_price = float(base["전략 매수가"])
-                    strategy_exit_price = float(base["전략 매도가"])
-                    strategy_qty = max(1, int(round(float(base["전략 수량"]))))
-                    strategy_exit_strategy = str(base["전략 매도전략"])
-
-                    changed = any([
-                        actual_entry_date != strategy_entry_date,
-                        actual_exit_date != strategy_exit_date,
-                        abs(actual_entry_price - strategy_entry_price) > 1e-9,
-                        abs(actual_exit_price - strategy_exit_price) > 1e-9,
-                        actual_qty != strategy_qty,
-                        actual_strategy != strategy_exit_strategy,
-                    ])
-
-                    if changed:
-                        new_overrides[key] = {
-                            "entry_date": actual_entry_date.isoformat(),
-                            "exit_date": actual_exit_date.isoformat(),
-                            "entry_price": actual_entry_price,
-                            "exit_price": actual_exit_price,
-                            "quantity": actual_qty,
-                            "exit_strategy": actual_strategy,
-                        }
-                        updated_qty_map[key] = actual_qty
-                    else:
-                        new_overrides.pop(key, None)
-                        # 표시된 청산거래가 전략값으로 복원되면 과거 실제수량 오버라이드도 함께 해제합니다.
-                        updated_qty_map.pop(key, None)
-
-                if validation_error:
-                    st.error(validation_error)
+            if pd.notna(latest_ma_row["MA5"]) and pd.notna(latest_ma_row["MA20"]) and pd.notna(latest_ma_row["MA50"]):
+                if latest_ma_row["MA5"] < latest_ma_row["MA20"] < latest_ma_row["MA50"]:
+                    st.info("현재 이동평균 배열: MA5 < MA20 < MA50 · V9 단기하락추세 방어 LOC 조건에 해당")
                 else:
-                    st.session_state["v9_trade_overrides"] = new_overrides
-                    st.session_state["v9_quantity_overrides"] = updated_qty_map
-                    st.session_state["v9_manual_trades"] = _sanitize_v9_manual_trades(manual_for_editor)
+                    st.caption("현재 이동평균 배열은 V9 단기하락추세 조건(MA5 < MA20 < MA50)에 해당하지 않습니다.")
+
+        fig_price = go.Figure()
+
+        for col_name, display_name in [
+            ("Close", "SOXL 종가"),
+            ("MA5", "5일 이동평균(MA5)"),
+            ("MA20", "20일 이동평균(MA20)"),
+            ("MA50", "50일 이동평균(MA50)"),
+        ]:
+            fig_price.add_trace(
+                go.Scatter(
+                    x=prices_display["Date"],
+                    y=prices_display[col_name],
+                    name=display_name,
+                )
+            )
+
+        fig_price.update_layout(
+            height=500,
+            hovermode="x unified",
+            legend=dict(orientation="h"),
+        )
+
+        st.plotly_chart(
+            fig_price,
+            use_container_width=True,
+        )
+
+
+        # --------------------------------------------------------
+        # MA GAP
+        # --------------------------------------------------------
+
+        st.divider()
+
+        st.subheader(
+            "① MA200 Gap(200일 이동평균선 괴리율)별 성과"
+        )
+
+
+        ma_summary = (
+            market_analysis[
+                "ma_summary"
+            ]
+        )
+
+
+        ma_display_table = format_regime_table(ma_summary)
+        st.dataframe(
+            ma_display_table,
+            use_container_width=True,
+            hide_index=True,
+            height=min(420, max(220, 36 * (len(ma_display_table) + 1))),
+        )
+
+
+        fig_ma = (
+            go.Figure()
+        )
+
+
+        fig_ma.add_trace(
+            go.Bar(
+
+                x=
+                    ma_summary[
+                        "Bucket"
+                    ],
+
+                y=
+                    ma_summary[
+                        "Avg_Return"
+                    ]
+                    * 100,
+
+                name=
+                    "평균 수익률",
+
+            )
+        )
+
+
+        fig_ma.update_layout(
+
+            height=420,
+
+            xaxis_title=
+                "MA200 괴리율",
+
+            yaxis_title=
+                "평균 거래수익률 (%)",
+
+        )
+
+
+        st.plotly_chart(
+            fig_ma,
+            use_container_width=True,
+        )
+
+
+        # --------------------------------------------------------
+        # MOMENTUM
+        # --------------------------------------------------------
+
+        st.divider()
+
+        st.subheader(
+            "② Momentum 20D(최근 20거래일 수익률)별 성과"
+        )
+
+
+        momentum_summary = (
+            market_analysis[
+                "momentum_summary"
+            ]
+        )
+
+
+        momentum_display_table = format_regime_table(momentum_summary)
+        st.dataframe(
+            momentum_display_table,
+            use_container_width=True,
+            hide_index=True,
+            height=min(420, max(220, 36 * (len(momentum_display_table) + 1))),
+        )
+
+
+        fig_momentum = (
+            go.Figure()
+        )
+
+
+        fig_momentum.add_trace(
+            go.Bar(
+
+                x=
+                    momentum_summary[
+                        "Bucket"
+                    ],
+
+                y=
+                    momentum_summary[
+                        "Avg_Return"
+                    ]
+                    * 100,
+
+                name=
+                    "평균 수익률",
+
+            )
+        )
+
+
+        fig_momentum.update_layout(
+
+            height=420,
+
+            xaxis_title=
+                "최근 20일 수익률",
+
+            yaxis_title=
+                "평균 거래수익률 (%)",
+
+        )
+
+
+        st.plotly_chart(
+            fig_momentum,
+            use_container_width=True,
+        )
+
+
+        # --------------------------------------------------------
+        # COMBINATION
+        # --------------------------------------------------------
+
+        st.divider()
+
+        st.subheader(
+            "③ MA200 Gap(괴리율) × Momentum 20D(20일 수익률)"
+        )
+
+
+        metric_option = (
+            st.selectbox(
+
+                "조합표 표시 지표",
+
+                [
+                    "평균 수익률",
+                    "승률",
+                    "목표가 매도 비율(LOC)",
+                    "기한만료 매도 비율(TIME)",
+                    "손익 효율(PF)",
+                    "거래수",
+                ],
+
+            )
+        )
+
+
+        metric_map = {
+
+            "평균 수익률":
+                "Avg_Return",
+
+            "승률":
+                "Win_Rate",
+
+            "목표가 매도 비율(LOC)":
+                "Target_Rate",
+
+            "기한만료 매도 비율(TIME)":
+                "Time_Rate",
+
+            "손익 효율(PF)":
+                "Profit_Factor",
+
+            "거래수":
+                "Trades",
+
+        }
+
+
+        metric_col = (
+            metric_map[
+                metric_option
+            ]
+        )
+
+
+        combo = (
+            market_analysis[
+                "combo_summary"
+            ]
+        )
+
+
+        heatmap_df = (
+            combo.pivot(
+
+                index=
+                    "MA200_Bucket",
+
+                columns=
+                    "Momentum_Bucket",
+
+                values=
+                    metric_col,
+
+            )
+        )
+
+
+        heatmap_df = (
+            heatmap_df.reindex(
+
+                index=
+                    market_analysis[
+                        "ma_labels"
+                    ],
+
+                columns=
+                    market_analysis[
+                        "momentum_labels"
+                    ],
+
+            )
+        )
+
+
+        heatmap_values = (
+            heatmap_df.copy()
+        )
+
+
+        if metric_col in [
+
+            "Avg_Return",
+
+            "Win_Rate",
+
+            "Target_Rate",
+
+            "Time_Rate",
+
+        ]:
+
+            heatmap_values = (
+                heatmap_values
+                * 100
+            )
+
+
+            value_suffix = "%"
+
+        else:
+
+            value_suffix = ""
+
+
+        fig_heat = (
+            go.Figure(
+
+                data=
+                    go.Heatmap(
+
+                        z=
+                            heatmap_values.values,
+
+                        x=
+                            heatmap_values.columns,
+
+                        y=
+                            heatmap_values.index,
+
+                        text=
+                            heatmap_values.round(
+                                2
+                            ).astype(
+                                str
+                            )
+                            + value_suffix,
+
+                        texttemplate=
+                            "%{text}",
+
+                        hovertemplate=(
+                            "MA200: %{y}<br>"
+                            "20일 모멘텀: %{x}<br>"
+                            f"{metric_option}: "
+                            "%{text}"
+                            "<extra></extra>"
+                        ),
+
+                    )
+
+            )
+        )
+
+
+        fig_heat.update_layout(
+
+            height=520,
+
+            xaxis_title=
+                "최근 20거래일 모멘텀",
+
+            yaxis_title=
+                "MA200 괴리율",
+
+        )
+
+
+        st.plotly_chart(
+            fig_heat,
+            use_container_width=True,
+        )
+
+
+        # --------------------------------------------------------
+        # COMBO DETAIL
+        # --------------------------------------------------------
+
+        st.subheader(
+            "조합별 상세 성과"
+        )
+
+
+        combo_display = (
+            combo[
+                combo[
+                    "Trades"
+                ] > 0
+            ]
+            .copy()
+        )
+
+
+        combo_display[
+            "평균 수익률"
+        ] = (
+            combo_display[
+                "Avg_Return"
+            ]
+            .map(
+                lambda x:
+                    f"{x:.2%}"
+            )
+        )
+
+
+        combo_display[
+            "승률"
+        ] = (
+            combo_display[
+                "Win_Rate"
+            ]
+            .map(
+                lambda x:
+                    f"{x:.2%}"
+            )
+        )
+
+
+        combo_display[
+            "LOC율"
+        ] = (
+            combo_display[
+                "Target_Rate"
+            ]
+            .map(
+                lambda x:
+                    f"{x:.2%}"
+            )
+        )
+
+
+        combo_display[
+            "TIME율"
+        ] = (
+            combo_display[
+                "Time_Rate"
+            ]
+            .map(
+                lambda x:
+                    f"{x:.2%}"
+            )
+        )
+
+
+        combo_display[
+            "PF"
+        ] = (
+            combo_display[
+                "Profit_Factor"
+            ]
+            .map(
+
+                lambda x:
+                    (
+                        "∞"
+                        if x == float("inf")
+                        else f"{x:.2f}"
+                    )
+                    if pd.notna(x)
+                    else "-"
+
+            )
+        )
+
+
+        combo_display = (
+            combo_display[
+                [
+                    "MA200_Bucket",
+                    "Momentum_Bucket",
+                    "Trades",
+                    "평균 수익률",
+                    "승률",
+                    "LOC율",
+                    "TIME율",
+                    "PF",
+                ]
+            ]
+        )
+
+
+        combo_display.columns = [
+
+            "MA200 괴리율",
+
+            "20일 모멘텀",
+
+            "거래수",
+
+            "평균 수익률",
+
+            "승률",
+
+            "목표가 매도 비율(LOC)",
+
+            "기한만료 매도 비율(TIME)",
+
+            "손익 효율(PF)",
+
+        ]
+
+
+        st.dataframe(
+            combo_display,
+            use_container_width=True,
+            hide_index=True,
+            height=min(560, max(260, 36 * (len(combo_display) + 1))),
+        )
+
+
+        # --------------------------------------------------------
+        # RAW DATA DOWNLOAD
+        # --------------------------------------------------------
+
+        market_csv = (
+            market_analysis[
+                "trades"
+            ]
+            .to_csv(
+                index=False
+            )
+            .encode(
+                "utf-8-sig"
+            )
+        )
+
+
+        st.download_button(
+
+            "📥 시장상태 분석 거래내역 다운로드",
+
+            data=
+                market_csv,
+
+            file_name=
+                "SOXL_market_regime_analysis.csv",
+
+            mime=
+                "text/csv",
+
+        )
+
+
+    # ============================================================
+    # TAB 5 YEARLY
+    # ============================================================
+
+    with tab5:
+
+        yearly = (
+            current_result[
+                "yearly"
+            ]
+            .copy()
+        )
+
+
+        yearly_display = (
+            pd.DataFrame(
+                {
+
+                    "연도":
+                        yearly[
+                            "Year"
+                        ],
+
+                    "수익률":
+                        yearly[
+                            "Year_Return"
+                        ]
+                        .map(
+                            lambda x:
+                                f"{x:.2%}"
+                        ),
+
+                    "연중 최대 낙폭":
+                        yearly[
+                            "Year_MDD"
+                        ]
+                        .map(
+                            lambda x:
+                                f"{x:.2%}"
+                        ),
+
+                    "연말자산":
+                        yearly[
+                            "Year_End_Equity"
+                        ]
+                        .map(
+                            lambda x:
+                                f"{x:,.0f}원"
+                        ),
+
+                }
+            )
+        )
+
+
+        st.caption(
+            "연중 최대 낙폭은 각 연도 안에서 기록한 최고 포트폴리오 자산 대비 이후 가장 크게 하락한 폭입니다. "
+            "주가 자체의 낙폭이 아니라 전략 자산가치 기준이며, 매년 새로 계산됩니다."
+        )
+
+
+        st.dataframe(
+            yearly_display,
+            use_container_width=True,
+            hide_index=True,
+            height=min(520, max(220, 36 * (len(yearly_display) + 1))),
+        )
+
+
+    # ============================================================
+    # TAB 6 TRADES
+    # ============================================================
+
+    with tab6:
+
+        if strategy_mode.startswith(("V9", "V10", "V11")):
+            st.subheader("📋 실제 거래내역(Actual Trades)")
+
+            with st.expander("➕ 수동 거래 추가 / 구글시트 기록 가져오기"):
+                st.caption(
+                    "전략 백테스트에 존재하지 않는 실제 청산거래를 추가할 수 있습니다. "
+                    "기존 전략 거래와 동일한 거래를 다시 추가하면 NAV 손익이 이중 반영될 수 있습니다."
+                )
+                mc1, mc2 = st.columns(2)
+                manual_entry_date = mc1.date_input("매수일", value=start_date, key="manual_trade_entry_date")
+                manual_exit_date = mc2.date_input("매도일", value=min(max_date, date.today()), key="manual_trade_exit_date")
+                mp1, mp2, mp3 = st.columns(3)
+                manual_entry_price = mp1.number_input("매수가($)", min_value=0.01, value=1.00, step=0.01, key="manual_trade_entry_price")
+                manual_exit_price = mp2.number_input("매도가($)", min_value=0.01, value=1.00, step=0.01, key="manual_trade_exit_price")
+                manual_qty = mp3.number_input("수량(주)", min_value=1, value=1, step=1, key="manual_trade_qty")
+                ms1, ms2 = st.columns(2)
+                manual_strategy = ms1.selectbox(
+                    "매도전략",
+                    ["일반 LOC(+2.7%)", "방어 LOC(+$0.10)", "TIME/MOC", "수동 매도", "기타"],
+                    index=3,
+                    key="manual_trade_strategy",
+                )
+                manual_affect_nav = ms2.checkbox(
+                    "실전 NAV에 손익 반영",
+                    value=True,
+                    key="manual_trade_affect_nav",
+                    help="과거 실제 운용손익을 현재 실전 NAV에 이어서 반영하려면 체크합니다.",
+                )
+                manual_note = st.text_input("메모(선택)", key="manual_trade_note")
+                if st.button("➕ 거래 1건 추가", use_container_width=True, key="add_manual_trade"):
+                    if manual_exit_date < manual_entry_date:
+                        st.error("매도일은 매수일보다 빠를 수 없습니다.")
+                    else:
+                        new_item = {
+                            "id": uuid.uuid4().hex,
+                            "entry_date": pd.Timestamp(manual_entry_date).date().isoformat(),
+                            "exit_date": pd.Timestamp(manual_exit_date).date().isoformat(),
+                            "entry_price": float(manual_entry_price),
+                            "exit_price": float(manual_exit_price),
+                            "quantity": int(manual_qty),
+                            "exit_strategy": manual_strategy,
+                            "note": manual_note,
+                            "affect_nav": bool(manual_affect_nav),
+                        }
+                        updated_manual = _sanitize_v9_manual_trades(
+                            st.session_state.get("v9_manual_trades", []) + [new_item]
+                        )
+                        ok, msg = save_persisted_v9_manual_trades(updated_manual)
+                        if ok:
+                            st.rerun()
+                        else:
+                            st.error(msg)
+
+                st.divider()
+                st.markdown("**구글시트 → CSV 일괄 가져오기**")
+                template_df = pd.DataFrame([{
+                    "매수일": "2026-01-02",
+                    "매도일": "2026-01-09",
+                    "매수가($)": 30.50,
+                    "매도가($)": 31.20,
+                    "수량(주)": 10,
+                    "매도전략": "수동 매도",
+                    "메모": "기존 구글시트 기록",
+                    "NAV반영": True,
+                }])
+                st.download_button(
+                    "CSV 양식 다운로드",
+                    data=template_df.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="SOXL_manual_trades_template.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="download_manual_template",
+                )
+                manual_csv = st.file_uploader(
+                    "구글시트에서 CSV로 내려받은 파일",
+                    type=["csv"],
+                    key="manual_trade_csv_upload",
+                )
+                if manual_csv is not None:
+                    try:
+                        imported = pd.read_csv(manual_csv)
+                        required_cols = ["매수일", "매도일", "매수가($)", "매도가($)", "수량(주)"]
+                        missing_cols = [c for c in required_cols if c not in imported.columns]
+                        if missing_cols:
+                            st.error("필수 열이 없습니다: " + ", ".join(missing_cols))
+                        else:
+                            preview_cols = [c for c in ["매수일", "매도일", "매수가($)", "매도가($)", "수량(주)", "매도전략", "메모", "NAV반영"] if c in imported.columns]
+                            st.dataframe(imported[preview_cols].head(20), use_container_width=True, hide_index=True)
+                            if st.button("📥 CSV 거래내역 가져오기", use_container_width=True, key="import_manual_trades_csv"):
+                                new_rows = []
+                                for _, r in imported.iterrows():
+                                    strategy_value = str(r.get("매도전략", "수동 매도")).strip()
+                                    nav_raw = r.get("NAV반영", True)
+                                    if isinstance(nav_raw, str):
+                                        affect_nav = nav_raw.strip().lower() not in {"false", "0", "no", "n", "아니오", "미반영"}
+                                    else:
+                                        affect_nav = bool(nav_raw) if pd.notna(nav_raw) else True
+                                    new_rows.append({
+                                        "id": uuid.uuid4().hex,
+                                        "entry_date": r["매수일"],
+                                        "exit_date": r["매도일"],
+                                        "entry_price": r["매수가($)"],
+                                        "exit_price": r["매도가($)"],
+                                        "quantity": r["수량(주)"],
+                                        "exit_strategy": strategy_value,
+                                        "note": str(r.get("메모", "")) if pd.notna(r.get("메모", "")) else "",
+                                        "affect_nav": affect_nav,
+                                    })
+                                before = len(st.session_state.get("v9_manual_trades", []))
+                                merged_manual = _sanitize_v9_manual_trades(
+                                    st.session_state.get("v9_manual_trades", []) + new_rows
+                                )
+                                added = len(merged_manual) - before
+                                ok, msg = save_persisted_v9_manual_trades(merged_manual)
+                                if ok:
+                                    st.success(f"{added:,}건을 가져왔습니다.")
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
+                    except Exception as e:
+                        st.error(f"CSV 읽기 실패: {e}")
+
+                current_manual = _sanitize_v9_manual_trades(st.session_state.get("v9_manual_trades", []))
+                if current_manual:
+                    st.divider()
+                    st.markdown(f"**현재 수동 추가 거래: {len(current_manual):,}건**")
+                    manual_options = {
+                        f"{x['entry_date']} → {x['exit_date']} | {x['quantity']}주 | {x['entry_price']:.2f}→{x['exit_price']:.2f} | {x.get('note','')}": x["id"]
+                        for x in reversed(current_manual)
+                    }
+                    delete_manual_label = st.selectbox(
+                        "삭제할 수동 거래",
+                        list(manual_options.keys()),
+                        key="delete_manual_trade_select",
+                    )
+                    if st.button("🗑️ 선택 거래 삭제", use_container_width=True, key="delete_manual_trade"):
+                        delete_manual_id = manual_options[delete_manual_label]
+                        remaining_manual = [x for x in current_manual if x["id"] != delete_manual_id]
+                        ok, msg = save_persisted_v9_manual_trades(remaining_manual)
+                        if ok:
+                            st.rerun()
+                        else:
+                            st.error(msg)
+
+            st.caption(
+                "전략 체결값이 기본으로 입력되어 있으며, 실제 매매가 달랐던 거래만 날짜·가격·수량·매도전략을 수정해 저장할 수 있습니다. "
+                "저장한 실제 체결 손익은 실전 현금·총자산(NAV)·다음 매수금액에 반영되지만, 전략 백테스트의 연평균 복리수익률(CAGR)·최대 낙폭(MDD)에는 영향을 주지 않습니다."
+            )
+
+            if "v9_trade_overrides" not in st.session_state:
+                loaded_trade_overrides, trade_override_status = load_persisted_v9_trade_overrides()
+                st.session_state["v9_trade_overrides"] = loaded_trade_overrides
+                st.session_state["v9_trade_persistence_status"] = trade_override_status
+
+            trade_overrides_for_editor = _sanitize_v9_trade_overrides(
+                st.session_state.get("v9_trade_overrides", {})
+            )
+            qty_map_for_trades = dict(st.session_state.get("v9_quantity_overrides", {}))
+
+            if trades.empty:
+                st.info("표시할 청산 거래가 없습니다.")
+            else:
+                trade_model_dates = pd.to_datetime(trades["Entry_Date"], errors="coerce").dropna()
+                override_entry_dates = []
+                for item in trade_overrides_for_editor.values():
+                    try:
+                        override_entry_dates.append(pd.Timestamp(item.get("entry_date")))
+                    except Exception:
+                        pass
+
+                if not trade_model_dates.empty:
+                    fx_start = min(override_entry_dates + [trade_model_dates.min()]) if override_entry_dates else trade_model_dates.min()
+                    fx_end = max(override_entry_dates + [trade_model_dates.max()]) if override_entry_dates else trade_model_dates.max()
+                    trades_fx_daily = get_usdkrw_daily_rates(fx_start, fx_end)
+                else:
+                    trades_fx_daily = pd.DataFrame(columns=["Date", "USD_KRW"])
+
+                actual_records_all = build_v9_actual_trade_records(
+                    trades,
+                    qty_overrides=qty_map_for_trades,
+                    trade_overrides=trade_overrides_for_editor,
+                    fx_daily=trades_fx_daily,
+                    fallback_fx=portfolio_fallback_fx,
+                    excluded_positions=st.session_state.get("v9_excluded_positions", []),
+                )
+                manual_for_editor = _sanitize_v9_manual_trades(st.session_state.get("v9_manual_trades", []))
+                if manual_for_editor:
+                    manual_entry_dates = [pd.Timestamp(x["entry_date"]) for x in manual_for_editor]
+                    manual_fx_daily = get_usdkrw_daily_rates(min(manual_entry_dates), max(manual_entry_dates)) if manual_entry_dates else trades_fx_daily
+                    manual_records = build_v9_manual_trade_records(
+                        manual_for_editor,
+                        fx_daily=manual_fx_daily,
+                        fallback_fx=portfolio_fallback_fx,
+                    )
+                    if not manual_records.empty:
+                        actual_records_all = pd.concat([actual_records_all, manual_records], ignore_index=True, sort=False)
+
+                # 실제 거래내역에서 바로 확인할 수 있는 핵심 결과만 요약합니다.
+                # 아래 편집표와 같은 데이터를 다시 표 형태로 반복 표시하지 않습니다.
+                actual_profit_series = pd.to_numeric(
+                    actual_records_all.get("손익(원)", pd.Series(dtype=float)),
+                    errors="coerce",
+                )
+                actual_return_series = pd.to_numeric(
+                    actual_records_all.get("수익률", pd.Series(dtype=float)),
+                    errors="coerce",
+                )
+                valid_profit = actual_profit_series.dropna()
+                valid_return = actual_return_series.dropna()
+                actual_total_profit = float(valid_profit.sum()) if not valid_profit.empty else 0.0
+                actual_win_rate = (
+                    float((valid_profit > 0).mean())
+                    if not valid_profit.empty
+                    else float("nan")
+                )
+                actual_avg_return = (
+                    float(valid_return.mean())
+                    if not valid_return.empty
+                    else float("nan")
+                )
+                actual_trade_count = int(len(actual_records_all))
+
+                ak1, ak2, ak3, ak4 = st.columns(4)
+                ak1.metric("누적 실제 손익", f"{actual_total_profit:+,.0f}원")
+                ak2.metric(
+                    "실제 거래 승률",
+                    f"{actual_win_rate:.2%}" if pd.notna(actual_win_rate) else "-",
+                )
+                ak3.metric(
+                    "평균 실제 수익률",
+                    f"{actual_avg_return:.2%}" if pd.notna(actual_avg_return) else "-",
+                )
+                ak4.metric("총 거래건수", f"{actual_trade_count:,}건")
+
+                view_options = ["최근 30건", "최근 100건", "전체"]
+                view_choice = st.selectbox(
+                    "표시 범위",
+                    view_options,
+                    index=1,
+                    key="v9_actual_trade_view_range",
+                    label_visibility="collapsed",
+                )
+
+                actual_records = actual_records_all.sort_values(
+                    ["매도일", "매수일"], ascending=[False, False]
+                )
+                if view_choice == "최근 30건":
+                    actual_records = actual_records.head(30)
+                elif view_choice == "최근 100건":
+                    actual_records = actual_records.head(100)
+
+                actual_records["구분"] = actual_records.get("_source", "strategy").map({"strategy": "전략연결", "manual": "수동추가"}).fillna("전략연결")
+                editor_cols = [
+                    "구분", "매수유형", "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
+                    "매도전략", "투자금(원)", "수익률", "손익(원)", "수정",
+                ]
+                editor_df = actual_records.set_index("_key")[editor_cols].copy()
+                editor_df["투자금(원)"] = editor_df["투자금(원)"].map(
+                    lambda x: f"{x:,.0f}원" if pd.notna(x) else "환율 조회 필요"
+                )
+                editor_df["수익률"] = editor_df["수익률"].map(
+                    lambda x: f"{x:.2%}" if pd.notna(x) else "계산 불가"
+                )
+                editor_df["손익(원)"] = editor_df["손익(원)"].map(
+                    lambda x: f"{x:+,.0f}원" if pd.notna(x) else "환율 조회 필요"
+                )
+
+                editor_height = min(700, max(280, 42 * (len(editor_df) + 1)))
+                edited_trades = st.data_editor(
+                    editor_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=editor_height,
+                    row_height=38,
+                    disabled=["구분", "매수유형", "투자금(원)", "수익률", "손익(원)", "수정"],
+                    column_config={
+                        "구분": st.column_config.TextColumn("구분", width="small"),
+                        "매수유형": st.column_config.TextColumn("매수유형", width="medium"),
+                        "매수일": st.column_config.DateColumn("✏️ 매수일", format="YYYY-MM-DD", width="small"),
+                        "매도일": st.column_config.DateColumn("✏️ 매도일", format="YYYY-MM-DD", width="small"),
+                        "매수가($)": st.column_config.NumberColumn("✏️ 매수가", min_value=0.01, step=0.01, format="$%.2f", width="small"),
+                        "매도가($)": st.column_config.NumberColumn("✏️ 매도가", min_value=0.01, step=0.01, format="$%.2f", width="small"),
+                        "수량(주)": st.column_config.NumberColumn("✏️ 수량", min_value=1, step=1, format="%d주", width="small"),
+                        "매도전략": st.column_config.SelectboxColumn(
+                            "✏️ 실제 매도전략",
+                            options=[
+                                "일반 LOC(+2.7%)",
+                                "방어 LOC(+$0.10)",
+                                "TIME/MOC",
+                                "수동 매도",
+                                "기타",
+                            ],
+                            width="medium",
+                        ),
+                        "투자금(원)": st.column_config.TextColumn("투자금", width="medium"),
+                        "수익률": st.column_config.TextColumn("수익률", width="small"),
+                        "손익(원)": st.column_config.TextColumn("손익", width="medium"),
+                        "수정": st.column_config.TextColumn("상태", width="small"),
+                    },
+                    key="v9_actual_trades_editor",
+                )
+
+                st.caption("가격·수량을 수정한 뒤 저장하면 표가 다시 계산되어 투자금·수익률·손익이 갱신됩니다.")
+
+                save_col, reset_col = st.columns(2)
+
+                if save_col.button(
+                    "💾 실제 거래 변경 저장",
+                    use_container_width=True,
+                    key="save_v9_actual_trades",
+                ):
+                    baseline = actual_records_all.set_index("_key")
+                    displayed_keys = set(editor_df.index.astype(str))
+                    new_overrides = {
+                        k: v for k, v in trade_overrides_for_editor.items()
+                        if k not in displayed_keys
+                    }
+                    updated_qty_map = dict(qty_map_for_trades)
+                    validation_error = None
+
+                    for key, row in edited_trades.iterrows():
+                        key = str(key)
+                        if key not in baseline.index:
+                            continue
+                        base = baseline.loc[key]
+                        try:
+                            actual_entry_date = pd.Timestamp(row["매수일"]).date()
+                            actual_exit_date = pd.Timestamp(row["매도일"]).date()
+                            actual_entry_price = float(row["매수가($)"])
+                            actual_exit_price = float(row["매도가($)"])
+                            actual_qty = max(1, int(round(float(row["수량(주)"]))))
+                            actual_strategy = str(row["매도전략"])
+                        except Exception:
+                            validation_error = "날짜·가격·수량 입력값을 확인해주세요."
+                            break
+
+                        if actual_exit_date < actual_entry_date:
+                            validation_error = f"{actual_entry_date} 거래의 매도일이 매수일보다 빠릅니다."
+                            break
+                        if actual_entry_price <= 0 or actual_exit_price <= 0:
+                            validation_error = "매수가와 매도가는 0보다 커야 합니다."
+                            break
+
+                        if str(base.get("_source", "strategy")) == "manual":
+                            manual_id = str(base.get("_manual_id"))
+                            for manual_item in manual_for_editor:
+                                if manual_item["id"] == manual_id:
+                                    manual_item.update({
+                                        "entry_date": actual_entry_date.isoformat(),
+                                        "exit_date": actual_exit_date.isoformat(),
+                                        "entry_price": actual_entry_price,
+                                        "exit_price": actual_exit_price,
+                                        "quantity": actual_qty,
+                                        "exit_strategy": actual_strategy,
+                                    })
+                                    break
+                            continue
+
+                        strategy_entry_date = pd.Timestamp(base["전략 매수일"]).date()
+                        strategy_exit_date = pd.Timestamp(base["전략 매도일"]).date()
+                        strategy_entry_price = float(base["전략 매수가"])
+                        strategy_exit_price = float(base["전략 매도가"])
+                        strategy_qty = max(1, int(round(float(base["전략 수량"]))))
+                        strategy_exit_strategy = str(base["전략 매도전략"])
+
+                        changed = any([
+                            actual_entry_date != strategy_entry_date,
+                            actual_exit_date != strategy_exit_date,
+                            abs(actual_entry_price - strategy_entry_price) > 1e-9,
+                            abs(actual_exit_price - strategy_exit_price) > 1e-9,
+                            actual_qty != strategy_qty,
+                            actual_strategy != strategy_exit_strategy,
+                        ])
+
+                        if changed:
+                            new_overrides[key] = {
+                                "entry_date": actual_entry_date.isoformat(),
+                                "exit_date": actual_exit_date.isoformat(),
+                                "entry_price": actual_entry_price,
+                                "exit_price": actual_exit_price,
+                                "quantity": actual_qty,
+                                "exit_strategy": actual_strategy,
+                            }
+                            updated_qty_map[key] = actual_qty
+                        else:
+                            new_overrides.pop(key, None)
+                            # 표시된 청산거래가 전략값으로 복원되면 과거 실제수량 오버라이드도 함께 해제합니다.
+                            updated_qty_map.pop(key, None)
+
+                    if validation_error:
+                        st.error(validation_error)
+                    else:
+                        st.session_state["v9_trade_overrides"] = new_overrides
+                        st.session_state["v9_quantity_overrides"] = updated_qty_map
+                        st.session_state["v9_manual_trades"] = _sanitize_v9_manual_trades(manual_for_editor)
+                        ok, msg = save_persisted_v9_trade_overrides(
+                            new_overrides, quantity_map=updated_qty_map
+                        )
+                        st.session_state["v9_trade_persistence_ok"] = ok
+                        st.session_state["v9_trade_persistence_status"] = msg
+                        if ok:
+                            st.rerun()
+                        else:
+                            st.error(msg)
+
+                if reset_col.button(
+                    "↩️ 표시 거래 전략값으로 복원",
+                    use_container_width=True,
+                    key="reset_v9_actual_trades",
+                ):
+                    displayed_keys = set(editor_df.index.astype(str))
+                    strategy_displayed_keys = {k for k in displayed_keys if not str(k).startswith("manual|")}
+                    reset_overrides = {
+                        k: v for k, v in trade_overrides_for_editor.items()
+                        if k not in strategy_displayed_keys
+                    }
+                    reset_qty_map = dict(qty_map_for_trades)
+                    for key in strategy_displayed_keys:
+                        reset_qty_map.pop(key, None)
+                    st.session_state["v9_trade_overrides"] = reset_overrides
+                    st.session_state["v9_quantity_overrides"] = reset_qty_map
                     ok, msg = save_persisted_v9_trade_overrides(
-                        new_overrides, quantity_map=updated_qty_map
+                        reset_overrides, quantity_map=reset_qty_map
                     )
                     st.session_state["v9_trade_persistence_ok"] = ok
                     st.session_state["v9_trade_persistence_status"] = msg
@@ -7102,136 +7204,110 @@ with tab6:
                     else:
                         st.error(msg)
 
-            if reset_col.button(
-                "↩️ 표시 거래 전략값으로 복원",
-                use_container_width=True,
-                key="reset_v9_actual_trades",
-            ):
-                displayed_keys = set(editor_df.index.astype(str))
-                strategy_displayed_keys = {k for k in displayed_keys if not str(k).startswith("manual|")}
-                reset_overrides = {
-                    k: v for k, v in trade_overrides_for_editor.items()
-                    if k not in strategy_displayed_keys
-                }
-                reset_qty_map = dict(qty_map_for_trades)
-                for key in strategy_displayed_keys:
-                    reset_qty_map.pop(key, None)
-                st.session_state["v9_trade_overrides"] = reset_overrides
-                st.session_state["v9_quantity_overrides"] = reset_qty_map
-                ok, msg = save_persisted_v9_trade_overrides(
-                    reset_overrides, quantity_map=reset_qty_map
-                )
-                st.session_state["v9_trade_persistence_ok"] = ok
-                st.session_state["v9_trade_persistence_status"] = msg
-                if ok:
-                    st.rerun()
+                persistence_msg = st.session_state.get("v9_trade_persistence_status", "")
+                if portfolio_persistence_enabled():
+                    if st.session_state.get("v9_trade_persistence_ok") is False:
+                        st.error(f"☁️ 실제 거래 영구저장 오류 · {persistence_msg}")
+                    else:
+                        st.caption(
+                            f"🔐 실제 거래 수정값 영구저장 연결됨 · "
+                            f"{len(trade_overrides_for_editor):,}건 수정 저장 · "
+                            f"{persistence_msg or 'GitHub 암호화 저장소 사용'}"
+                        )
                 else:
-                    st.error(msg)
+                    st.warning("현재는 세션 저장만 사용 중입니다. Streamlit Secrets의 GitHub/암호화 설정을 확인하세요.")
 
-            persistence_msg = st.session_state.get("v9_trade_persistence_status", "")
-            if portfolio_persistence_enabled():
-                if st.session_state.get("v9_trade_persistence_ok") is False:
-                    st.error(f"☁️ 실제 거래 영구저장 오류 · {persistence_msg}")
-                else:
-                    st.caption(
-                        f"🔐 실제 거래 수정값 영구저장 연결됨 · "
-                        f"{len(trade_overrides_for_editor):,}건 수정 저장 · "
-                        f"{persistence_msg or 'GitHub 암호화 저장소 사용'}"
+                # 실제 거래내역 편집표 자체가 상세 손익표 역할을 하므로 중복 요약표는 제거했습니다.
+
+                with st.expander("전략 기준값과 비교"):
+                    strategy_only_records = actual_records[actual_records.get("_source", "strategy") != "manual"].copy()
+                    strategy_compare = strategy_only_records[[
+                        "매수유형", "전략 매수일", "전략 매도일", "전략 매수가", "전략 매도가",
+                        "전략 수량", "전략 매도전략", "수정",
+                    ]].copy()
+                    strategy_compare["전략 매수가"] = strategy_compare["전략 매수가"].map(lambda x: f"${x:,.2f}" if pd.notna(x) else "-")
+                    strategy_compare["전략 매도가"] = strategy_compare["전략 매도가"].map(lambda x: f"${x:,.2f}" if pd.notna(x) else "-")
+                    strategy_compare["전략 수량"] = strategy_compare["전략 수량"].map(lambda x: f"{int(x):,}주" if pd.notna(x) else "-")
+                    st.dataframe(
+                        strategy_compare,
+                        use_container_width=True,
+                        hide_index=True,
+                        height=min(520, max(220, 36 * (len(strategy_compare) + 1))),
                     )
-            else:
-                st.warning("현재는 세션 저장만 사용 중입니다. Streamlit Secrets의 GitHub/암호화 설정을 확인하세요.")
 
-            # 실제 거래내역 편집표 자체가 상세 손익표 역할을 하므로 중복 요약표는 제거했습니다.
-
-            with st.expander("전략 기준값과 비교"):
-                strategy_only_records = actual_records[actual_records.get("_source", "strategy") != "manual"].copy()
-                strategy_compare = strategy_only_records[[
-                    "매수유형", "전략 매수일", "전략 매도일", "전략 매수가", "전략 매도가",
-                    "전략 수량", "전략 매도전략", "수정",
+                download_actual = actual_records_all[[
+                    "매수유형", "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
+                    "매도전략", "적용환율", "투자금(원)", "수익률", "손익(원)", "수정",
                 ]].copy()
-                strategy_compare["전략 매수가"] = strategy_compare["전략 매수가"].map(lambda x: f"${x:,.2f}" if pd.notna(x) else "-")
-                strategy_compare["전략 매도가"] = strategy_compare["전략 매도가"].map(lambda x: f"${x:,.2f}" if pd.notna(x) else "-")
-                strategy_compare["전략 수량"] = strategy_compare["전략 수량"].map(lambda x: f"{int(x):,}주" if pd.notna(x) else "-")
-                st.dataframe(
-                    strategy_compare,
+                csv_actual = download_actual.to_csv(index=False).encode("utf-8-sig")
+                csv_strategy = trades.to_csv(index=False).encode("utf-8-sig")
+                dl1, dl2 = st.columns(2)
+                dl1.download_button(
+                    "📥 실제 거래내역 CSV",
+                    data=csv_actual,
+                    file_name="SOXL_actual_trades.csv",
+                    mime="text/csv",
                     use_container_width=True,
-                    hide_index=True,
-                    height=min(520, max(220, 36 * (len(strategy_compare) + 1))),
+                )
+                dl2.download_button(
+                    "📥 전략 원본 거래내역 CSV",
+                    data=csv_strategy,
+                    file_name="SOXL_strategy_trades.csv",
+                    mime="text/csv",
+                    use_container_width=True,
                 )
 
-            download_actual = actual_records_all[[
-                "매수유형", "매수일", "매도일", "매수가($)", "매도가($)", "수량(주)",
-                "매도전략", "적용환율", "투자금(원)", "수익률", "손익(원)", "수정",
-            ]].copy()
-            csv_actual = download_actual.to_csv(index=False).encode("utf-8-sig")
-            csv_strategy = trades.to_csv(index=False).encode("utf-8-sig")
-            dl1, dl2 = st.columns(2)
-            dl1.download_button(
-                "📥 실제 거래내역 CSV",
-                data=csv_actual,
-                file_name="SOXL_actual_trades.csv",
-                mime="text/csv",
+        else:
+            # V7/V8/Custom은 기존 전략 거래표를 읽기 전용으로 유지합니다.
+            display_trades = trades.copy()
+            exit_label_map = {
+                "TARGET": "TARGET(목표수익 매도)",
+                "NORMAL_LOC": "LOC(+2.7% 목표수익 매도)",
+                "TB3_DYN_LOC": "방어 LOC(매수가 + $0.10 매도)",
+                "TIME": "TIME(기한 만료 매도)",
+                "END": "END(검증 종료 시 보유)",
+            }
+            display_trades["매수일"] = pd.to_datetime(display_trades["Entry_Date"]).dt.date
+            display_trades["매도일"] = pd.to_datetime(display_trades["Exit_Date"]).dt.date
+            display_trades["매수가"] = display_trades["Entry_Price"].map(lambda x: f"${x:,.2f}")
+            display_trades["매도가"] = display_trades["Exit_Price"].map(lambda x: f"${x:,.2f}")
+            display_trades["투자금"] = display_trades["Invested"].map(lambda x: f"{x:,.0f}원")
+            display_trades["수익률"] = display_trades["Return"].map(lambda x: f"{x:.2%}")
+            display_trades["손익"] = display_trades["Profit"].map(lambda x: f"{x:,.0f}원")
+            display_trades["보유 거래일"] = display_trades["Holding_Days"].map(lambda x: f"{int(x)}일")
+            display_trades["매도 이유"] = display_trades["Exit_Type"].map(exit_label_map).fillna(display_trades["Exit_Type"])
+            display_trades = display_trades[[
+                "매수일", "매도일", "매수가", "매도가", "투자금",
+                "수익률", "손익", "보유 거래일", "매도 이유",
+            ]]
+            st.dataframe(
+                display_trades,
                 use_container_width=True,
+                hide_index=True,
+                height=min(650, max(260, 38 * (len(display_trades) + 1))),
             )
-            dl2.download_button(
-                "📥 전략 원본 거래내역 CSV",
-                data=csv_strategy,
-                file_name="SOXL_strategy_trades.csv",
+            csv = trades.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "📥 거래내역 CSV 다운로드",
+                data=csv,
+                file_name="SOXL_current_strategy_trades.csv",
                 mime="text/csv",
-                use_container_width=True,
             )
 
-    else:
-        # V7/V8/Custom은 기존 전략 거래표를 읽기 전용으로 유지합니다.
-        display_trades = trades.copy()
-        exit_label_map = {
-            "TARGET": "TARGET(목표수익 매도)",
-            "NORMAL_LOC": "LOC(+2.7% 목표수익 매도)",
-            "TB3_DYN_LOC": "방어 LOC(매수가 + $0.10 매도)",
-            "TIME": "TIME(기한 만료 매도)",
-            "END": "END(검증 종료 시 보유)",
-        }
-        display_trades["매수일"] = pd.to_datetime(display_trades["Entry_Date"]).dt.date
-        display_trades["매도일"] = pd.to_datetime(display_trades["Exit_Date"]).dt.date
-        display_trades["매수가"] = display_trades["Entry_Price"].map(lambda x: f"${x:,.2f}")
-        display_trades["매도가"] = display_trades["Exit_Price"].map(lambda x: f"${x:,.2f}")
-        display_trades["투자금"] = display_trades["Invested"].map(lambda x: f"{x:,.0f}원")
-        display_trades["수익률"] = display_trades["Return"].map(lambda x: f"{x:.2%}")
-        display_trades["손익"] = display_trades["Profit"].map(lambda x: f"{x:,.0f}원")
-        display_trades["보유 거래일"] = display_trades["Holding_Days"].map(lambda x: f"{int(x)}일")
-        display_trades["매도 이유"] = display_trades["Exit_Type"].map(exit_label_map).fillna(display_trades["Exit_Type"])
-        display_trades = display_trades[[
-            "매수일", "매도일", "매수가", "매도가", "투자금",
-            "수익률", "손익", "보유 거래일", "매도 이유",
-        ]]
-        st.dataframe(
-            display_trades,
-            use_container_width=True,
-            hide_index=True,
-            height=min(650, max(260, 38 * (len(display_trades) + 1))),
-        )
-        csv = trades.to_csv(index=False).encode("utf-8-sig")
-        st.download_button(
-            "📥 거래내역 CSV 다운로드",
-            data=csv,
-            file_name="SOXL_current_strategy_trades.csv",
-            mime="text/csv",
-        )
 
+    # ============================================================
+    # FOOTER
+    # ============================================================
 
-# ============================================================
-# FOOTER
-# ============================================================
+    st.divider()
 
-st.divider()
+    st.caption(
+        "V7 Base(기본 전략): 전일 NAV(총자산) / 7분할 / LOC(목표수익 매도) +2.7% / "
+        "7거래일 TIME·MOC(기한 만료 종가 매도) / Reserve(남겨둘 현금) 0% / "
+        "당일 매도대금 재사용 금지"
+    )
 
-st.caption(
-    "V7 Base(기본 전략): 전일 NAV(총자산) / 7분할 / LOC(목표수익 매도) +2.7% / "
-    "7거래일 TIME·MOC(기한 만료 종가 매도) / Reserve(남겨둘 현금) 0% / "
-    "당일 매도대금 재사용 금지"
-)
-
-st.caption(
-    "V8 장기과매도 약세필터: V7 규칙을 그대로 사용하되, "
-    "Risk B(매수 쉬어가기 구간)에서는 신규매수만 쉽니다."
-)
+    st.caption(
+        "V8 장기과매도 약세필터: V7 규칙을 그대로 사용하되, "
+        "Risk B(매수 쉬어가기 구간)에서는 신규매수만 쉽니다."
+    )
