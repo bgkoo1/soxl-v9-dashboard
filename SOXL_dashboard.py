@@ -546,61 +546,51 @@ st.markdown(
       border-radius:14px;
     }
 
-    /* Redesign v3: match reference layout, without affecting trading mechanics */
-    .stApp {background:#f5f7fc !important;}
-    [data-testid="stSidebar"] {background:#f8faff !important;border-right:1px solid #e4eafa !important;}
-    .block-container {max-width:1900px !important;padding:1.1rem 1.25rem 2rem !important;}
-    .redesign-header {display:flex;align-items:center;gap:12px;margin-bottom:12px;}
-    .redesign-logo{font-size:1.7rem;color:#1460e8;font-weight:900;}
-    .redesign-headline{font-size:1.8rem;font-weight:850;color:#101c36;letter-spacing:-.035em;}
-    .redesign-subline{font-size:.84rem;color:#8291a9;margin-top:2px;}
-    [data-testid="stMetric"] {background:#fff;border:1px solid #e5eaf2;box-shadow:0 2px 10px rgba(29,49,93,.035);border-radius:12px;min-height:122px;padding:14px 12px;}
-    [data-testid="stMetricLabel"]{font-size:.84rem;color:#52607a;font-weight:750;}
-    [data-testid="stMetricValue"]{font-size:clamp(1rem,1.45vw,1.48rem) !important;color:#102143;white-space:nowrap !important;overflow:visible;letter-spacing:-.035em;}
-    [data-testid="stVerticalBlockBorderWrapper"]{border-radius:13px !important;}
+    /* Clean layout v4 — one cohesive final set of visual rules */
+    :root {color-scheme:light; --ui-text:#14243c; --ui-muted:#64748b; --ui-border:#e2e8f0;}
+    .stApp {background:#f5f7fb !important; color:var(--ui-text) !important;}
+    [data-testid="stHeader"] {background:#f5f7fb !important;}
+    [data-testid="stSidebar"] {background:#f9fbff !important; border-right:1px solid var(--ui-border) !important;}
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {gap:.62rem !important;}
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {font-size:.88rem;line-height:1.45;}
+    .block-container {max-width:1700px !important;padding:1.1rem 1.6rem 2.2rem !important;}
+    [data-testid="stHorizontalBlock"] {gap:.9rem !important;}
+    .redesign-header {display:flex;align-items:center;gap:12px;margin:8px 0 15px;min-height:55px;position:relative;z-index:2;}
+    .redesign-logo {font-size:1.8rem;color:#2563eb !important;font-weight:900;}
+    .redesign-headline {font-size:1.75rem;font-weight:850;color:#112446 !important;letter-spacing:-.035em;line-height:1.2;}
+    .redesign-subline {font-size:.86rem;color:#64748b !important;margin-top:5px;}
+    .redesign-nav-title,.soxl-side-section {font-weight:800;font-size:.84rem;color:#54657d;margin:.1rem 0 .5rem;}
+    .redesign-side-links {display:flex;flex-direction:column;gap:2px;margin:5px 0;}
+    .redesign-side-links a {display:block;padding:9px 10px;text-decoration:none;color:#3a4c68 !important;border-radius:9px;font-weight:650;font-size:.88rem;}
+    .redesign-side-links a:hover {background:#eaf1ff;color:#1c5fd6 !important;}
+    .soxl-kpi-grid {display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:10px 0 14px;}
+    .soxl-kpi {min-width:0;height:119px;box-sizing:border-box;background:#fff;border:1px solid #e4e9f2;border-radius:13px;padding:14px 13px;box-shadow:0 3px 12px rgba(28,46,90,.035);overflow:hidden;}
+    .soxl-kpi-label {font-size:.82rem;line-height:1.25;font-weight:750;color:#536681;margin:0 0 12px;}
+    .soxl-kpi-value {font-size:clamp(1.08rem,1.5vw,1.48rem);font-weight:850;color:#142a50;letter-spacing:-.035em;line-height:1.16;white-space:nowrap;}
+    .soxl-kpi-red .soxl-kpi-value {color:#dd3c56;}
+    .soxl-kpi-description {font-size:.73rem;line-height:1.3;color:#6c7b91;margin-top:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    [data-testid="stMetric"] {min-height:95px !important;padding:12px !important;background:#fff !important;border:1px solid #e4e9f2 !important;}
+    [data-testid="stMetricValue"] {font-size:clamp(1.04rem,1.35vw,1.38rem) !important;white-space:normal !important;overflow-wrap:normal !important;color:#13294b !important;}
+    [data-testid="stMetricLabel"] {font-size:.82rem !important;font-weight:700 !important;}
+    [data-testid="stMetricDelta"] {font-size:.76rem !important;}
+    [data-testid="stVerticalBlockBorderWrapper"] {border-radius:13px !important;border-color:#e1e7f0 !important;background:#fff !important;}
     [data-testid="stVerticalBlockBorderWrapper"] > div {background:#fff !important;}
-    .redesign-nav-title{font-weight:850;font-size:.85rem;color:#8995ab;margin:.35rem 0 .65rem;}
-    .redesign-side-links{display:flex;flex-direction:column;gap:4px;margin:14px 0;}
-    .redesign-side-links a{padding:12px 10px;text-decoration:none;color:#485c7c;border-radius:9px;font-weight:650;font-size:.9rem;}
-    .redesign-side-links a:hover{background:#e8f1ff;color:#185bea;}
-    .redesign-smalltitle{font-size:.82rem;color:#293a58;font-weight:750;margin:7px 0;}
-    .redesign-date{color:#6b7d96;font-size:.74rem;font-weight:500;}
-    .redesign-decision{border-radius:12px;padding:15px 18px;margin:4px 0 12px;min-height:93px;}
-    .redesign-buy{background:linear-gradient(110deg,#cfe2ff,#ebf3ff);}
-    .redesign-wait{background:linear-gradient(110deg,#e8effb,#f4f7fc);}
-    .redesign-decision-title{color:#075ad5;font-size:1.55rem;font-weight:850;}
-    .redesign-decision-info{color:#45678e;font-size:.82rem;margin-top:4px;}
-    .redesign-statusline{display:flex;justify-content:space-around;margin:7px 0 12px;padding:9px;background:#f8faff;border-radius:8px;color:#5f6f84;font-size:.87rem;}
-    .redesign-statusline b{color:#137653;}
-    [data-testid="stSidebar"] [data-testid="stMetric"]{min-height:80px;}
-    @media(max-width:1100px){[data-testid="stMetricValue"]{font-size:1rem !important;}.redesign-headline{font-size:1.3rem;}}
-
-    /* Dense responsive layout refinement: unified spacing, no dead right column */
-    .block-container { max-width: 1720px !important; padding: .65rem 1.15rem 1.3rem !important; }
-    [data-testid="stVerticalBlock"] { gap: .55rem !important; }
-    [data-testid="stHorizontalBlock"] { gap: .65rem !important; }
-    [data-testid="stMetric"] { min-height: 92px !important; padding: .7rem .8rem !important; }
-    [data-testid="stMetricLabel"] { font-size: .76rem !important; line-height:1.22 !important; }
-    [data-testid="stMetricValue"] { font-size: clamp(.97rem,1.23vw,1.42rem) !important; white-space:normal !important; overflow-wrap:anywhere; }
-    [data-testid="stMetricDelta"] {font-size:.72rem !important;}
-    [data-testid="stVerticalBlockBorderWrapper"] {padding:.65rem .75rem !important;border-color:#e5eaf3 !important;}
-    [data-testid="stVerticalBlockBorderWrapper"] h4 {font-size:1.02rem !important;margin:.1rem 0 .25rem !important;}
+    [data-testid="stVerticalBlockBorderWrapper"] h4 {font-size:1.1rem !important;font-weight:800 !important;margin:.1rem 0 .25rem !important;color:#182b4d !important;}
     [data-testid="stPlotlyChart"] {margin:0 !important;}
-    .redesign-header {margin-bottom: .2rem !important;}
-    .redesign-headline {font-size:1.48rem !important;}
-    .redesign-subline {font-size:.74rem !important;}
-    .redesign-decision {padding:.8rem 1rem !important;min-height:68px !important;margin:0 0 .35rem !important;}
-    .redesign-decision-title {font-size:1.22rem !important;}
-    .redesign-decision-info {font-size:.76rem !important;}
-    .redesign-statusline {margin:.2rem 0 !important;padding:.4rem .65rem !important;font-size:.77rem !important;}
-    .redesign-smalltitle {margin:0 !important;font-size:.75rem !important;}
-    .redesign-info-tag {font-size:.78rem;color:#64748b;}
-    .stCaptionContainer, [data-testid="stCaptionContainer"] {font-size:.72rem !important;line-height:1.35 !important;}
-    [data-testid="stDataFrame"] {border-radius:9px;}
-    [data-testid="stExpander"] {background:#fff !important;border:1px solid #dae4f0 !important;border-radius:12px;}
-    [data-testid="stSidebar"] {min-width:235px;}
-    @media (max-width:1200px){.block-container{padding:.65rem .75rem !important;}}
-    @media (max-width:820px){[data-testid="stMetric"]{min-height:80px !important;} [data-testid="stMetricValue"]{font-size:1.13rem !important;}}
+    [data-testid="stDataFrame"] {border:1px solid #e5ebf4;border-radius:9px;}
+    div[data-testid="stButton"] button {font-weight:700;border-radius:9px;min-height:39px;}
+    .redesign-smalltitle {font-size:.83rem;font-weight:750;color:#273e60;margin:6px 0;}
+    .redesign-date {color:#68788d;font-size:.76rem;}
+    .redesign-decision {border-radius:11px;padding:13px 15px;margin:3px 0 8px;min-height:76px;}
+    .redesign-buy {background:linear-gradient(120deg,#d5e5ff,#edf4ff);}
+    .redesign-wait {background:linear-gradient(120deg,#e6efff,#f4f8ff);}
+    .redesign-decision-title {font-size:1.4rem;color:#1455c4;font-weight:850;line-height:1.3;}
+    .redesign-decision-info {font-size:.78rem;color:#506581;margin-top:5px;}
+    .redesign-statusline {display:flex;justify-content:space-between;gap:8px;padding:9px 12px;margin:5px 0 7px;border-radius:8px;background:#f5f8fd;color:#586c85;font-size:.81rem;}
+    .redesign-statusline b {color:#12784c;}
+    .redesign-info-tag {font-size:.83rem;color:#465d7c;line-height:1.45;}
+    @media(max-width:1400px){.soxl-kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr));}.soxl-kpi{height:100px;}.soxl-kpi-label{margin-bottom:7px;}.soxl-kpi-description{margin-top:7px;}}
+    @media(max-width:900px){.block-container{padding:.85rem !important;}.redesign-headline{font-size:1.34rem;}.soxl-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.soxl-kpi-value{font-size:1.15rem;}}
     </style>
     """,
     unsafe_allow_html=True,
@@ -3840,14 +3830,10 @@ if app_page == "📊 백테스트 분석":
 # SIDEBAR
 # ============================================================
 
-st.sidebar.header(
-    "📈 실전 운용"
-)
+st.sidebar.markdown("<div class='soxl-side-section'>실전 운용</div>", unsafe_allow_html=True)
 
 
-st.sidebar.subheader(
-    "📅 데이터 상태"
-)
+st.sidebar.caption("확정 일봉 데이터")
 
 
 latest_data_date = (
@@ -3859,12 +3845,7 @@ latest_data_date = (
 )
 
 
-st.sidebar.metric(
-    "현재 최신 일봉",
-    str(
-        latest_data_date
-    )
-)
+st.sidebar.markdown(f"**{latest_data_date}**")
 
 
 if _redesign_refresh_placeholder.button(
@@ -3939,7 +3920,7 @@ saved_initial_capital = max(
     min(10_000_000_000, saved_initial_capital),
 )
 
-st.sidebar.subheader("⚙️ 운용 설정")
+st.sidebar.caption("전략과 운용 기준은 상단에서 선택합니다")
 
 strategy_mode = _redesign_strategy_placeholder.selectbox(
     "전략 선택",
@@ -3954,90 +3935,91 @@ strategy_mode = _redesign_strategy_placeholder.selectbox(
     index=0,
 )
 
-if strategy_mode.startswith("V11"):
-    st.sidebar.info("V11 실전 전환일: 2026-10-19 (미국 거래일). 이전 V10 보유 슬롯과 저장 수량·매수가를 유지하고, 이후 신규 주문에 V11 규칙을 적용합니다.")
+with st.sidebar.expander("⚙️ 운용 상세 설정", expanded=False):
+    if strategy_mode.startswith("V11"):
+        st.info("V11 실전 전환일: 2026-10-19 (미국 거래일). 이전 V10 보유 슬롯과 저장 수량·매수가를 유지하고, 이후 신규 주문에 V11 규칙을 적용합니다.")
 
-is_custom = strategy_mode.startswith("Custom")
+    is_custom = strategy_mode.startswith("Custom")
 
-initial_capital = (
-    st.sidebar.number_input(
+    initial_capital = (
+        st.number_input(
 
-        "초기 투자금 (원)",
+            "초기 투자금 (원)",
 
-        min_value=
-            1_000_000,
+            min_value=
+                1_000_000,
 
-        max_value=
-            10_000_000_000,
+            max_value=
+                10_000_000_000,
 
-        value=
-            saved_initial_capital,
+            value=
+                saved_initial_capital,
 
-        step=
-            10_000_000,
+            step=
+                10_000_000,
 
-        key=
-            "initial_capital_input",
+            key=
+                "initial_capital_input",
 
+        )
     )
-)
 
 
-position_divisor = (
-    st.sidebar.slider(
-        "Split(분할 수)",
-        2,
-        20,
-        7,
-        disabled=not is_custom,
+    position_divisor = (
+        st.slider(
+            "Split(분할 수)",
+            2,
+            20,
+            7,
+            disabled=not is_custom,
+        )
     )
-)
 
 
-max_positions = (
-    st.sidebar.slider(
-        "Max Positions(최대 동시 보유 수)",
-        1,
-        20,
-        7,
-        disabled=not is_custom,
+    max_positions = (
+        st.slider(
+            "Max Positions(최대 동시 보유 수)",
+            1,
+            20,
+            7,
+            disabled=not is_custom,
+        )
     )
-)
 
 
-target_percent = (
-    st.sidebar.slider(
-        "LOC(종가 조건 주문) 목표수익률 (%)",
-        0.5,
-        15.0,
-        2.7,
-        0.1,
-        disabled=not is_custom,
+    target_percent = (
+        st.slider(
+            "LOC(종가 조건 주문) 목표수익률 (%)",
+            0.5,
+            15.0,
+            2.7,
+            0.1,
+            disabled=not is_custom,
+        )
     )
-)
 
 
-holding_days = (
-    st.sidebar.slider(
-        "TIME(기한 만료 매도) 보유기간",
-        1,
-        30,
-        7,
-        disabled=not is_custom,
+    holding_days = (
+        st.slider(
+            "TIME(기한 만료 매도) 보유기간",
+            1,
+            30,
+            7,
+            disabled=not is_custom,
+        )
     )
-)
 
 
-reserve_percent = (
-    st.sidebar.slider(
-        "Reserve(남겨둘 현금) (%)",
-        0.0,
-        50.0,
-        0.0,
-        1.0,
-        disabled=not is_custom,
+    reserve_percent = (
+        st.slider(
+            "Reserve(남겨둘 현금) (%)",
+            0.0,
+            50.0,
+            0.0,
+            1.0,
+            disabled=not is_custom,
+        )
     )
-)
 
 
 st.sidebar.divider()
@@ -5701,19 +5683,21 @@ _asset_delta_pct = (_asset_delta / float(initial_capital)) * 100 if initial_capi
 _dashboard_recent = pd.DataFrame()
 
 st.markdown("<div id='redesign-overview' class='redesign-section-anchor'></div>", unsafe_allow_html=True)
-_cards = st.columns(6, gap="small")
-with _cards[0]:
-    st.metric("🟢 실전 총자산", f"₩{_asset_nav:,.0f}", f"{_asset_delta:+,.0f}원", help="실전 계좌의 확정일봉 기준 NAV. 증권사 잔고와 다를 수 있습니다.")
-with _cards[1]:
-    st.metric("🔵 백테스트 CAGR", f"{stats['cagr']:.2%}", help="선택 전략과 기간에 대한 모형 수익률")
-with _cards[2]:
-    st.metric("🔻 백테스트 MDD", f"{stats['mdd']:.2%}", help="최대 고점 대비 낙폭. 실전 계좌 MDD가 아닙니다.")
-with _cards[3]:
-    st.metric("◕ 현금 비중", f"{_asset_cash_pct:.1f}%", f"₩{_asset_cash:,.0f}", delta_color="off")
-with _cards[4]:
-    st.metric("◕ 투자 비중", f"{_asset_invest_pct:.1f}%", f"₩{_asset_invested:,.0f}", delta_color="off")
-with _cards[5]:
-    st.metric("▦ 보유 슬롯", f"{live_open_count} / {max_slots_for_live}", f"여유 {max(0,max_slots_for_live-live_open_count)}개", delta_color="off")
+_kpi_items = [
+    ("실전 총자산", f"₩{_asset_nav:,.0f}", f"입출금 조정 손익 {_asset_delta:+,.0f}원", "blue"),
+    ("백테스트 CAGR", f"{stats['cagr']:.2%}", "선택한 기간의 복리수익률", "blue"),
+    ("백테스트 MDD", f"{stats['mdd']:.2%}", "최대 고점 대비 낙폭", "red"),
+    ("현금 비중", f"{_asset_cash_pct:.1f}%", f"₩{_asset_cash:,.0f}", "neutral"),
+    ("투자 비중", f"{_asset_invest_pct:.1f}%", f"₩{_asset_invested:,.0f}", "neutral"),
+    ("보유 슬롯", f"{live_open_count} / {max_slots_for_live}", f"사용 가능 {max(0, max_slots_for_live-live_open_count)}개", "blue"),
+]
+_kpi_html = '<section class="soxl-kpi-grid">' + ''.join(
+    '<div class="soxl-kpi soxl-kpi-' + tone + '"><div class="soxl-kpi-label">' + _html_escape(label) +
+    '</div><div class="soxl-kpi-value">' + _html_escape(value) +
+    '</div><div class="soxl-kpi-description">' + _html_escape(desc) + '</div></div>'
+    for label, value, desc, tone in _kpi_items
+) + '</section>'
+st.markdown(_kpi_html, unsafe_allow_html=True)
 
 _left, _right = st.columns([1.65, 1], gap="small")
 with _left:
@@ -5740,7 +5724,7 @@ with _left:
             if "Close" in _eq.columns and _eq["Close"].notna().all():
                 _eq["SOXL_Return"] = 100 * (_eq["Close"] / float(_eq["Close"].iloc[0]) - 1)
                 _fig.add_trace(go.Scatter(x=_eq["Date"],y=_eq["SOXL_Return"],name="SOXL 단순보유",mode="lines",line=dict(color="#97A4B8",width=1.7)))
-            _fig.update_layout(height=270,margin=dict(l=2,r=5,t=10,b=5),paper_bgcolor="white",plot_bgcolor="white",hovermode="x unified",legend=dict(orientation="h",y=1.12,x=0),xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
+            _fig.update_layout(height=305,margin=dict(l=8,r=10,t=24,b=4),paper_bgcolor="white",plot_bgcolor="white",hovermode="x unified",legend=dict(orientation="h",y=1.18,x=0,font=dict(size=12,color="#314563")),xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
             st.plotly_chart(_fig,use_container_width=True,config={"displayModeBar":False},key="redesign_main_eq")
             st.markdown("<div class='redesign-smalltitle'>고점 대비 낙폭 (Drawdown)</div>",unsafe_allow_html=True)
             # For the actual historical drawdown, preserve the HWM of the full backtest.
@@ -5749,7 +5733,7 @@ with _left:
             _global_curve["Drawdown"] = (_global_curve["Equity"]/_global_curve["Equity"].cummax()-1)*100
             _d = _global_curve[_global_curve["Date"].isin(_eq["Date"])].copy()
             _dd = go.Figure(go.Scatter(x=_d["Date"],y=_d["Drawdown"],name="Drawdown",mode="lines",line=dict(color="#F04461",width=1.6),fill="tozeroy",fillcolor="rgba(240,68,97,.13)"))
-            _dd.update_layout(height=118,margin=dict(l=2,r=5,t=5,b=3),paper_bgcolor="white",plot_bgcolor="white",showlegend=False,xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
+            _dd.update_layout(height=140,margin=dict(l=8,r=10,t=6,b=4),paper_bgcolor="white",plot_bgcolor="white",showlegend=False,xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
             st.plotly_chart(_dd,use_container_width=True,config={"displayModeBar":False},key="redesign_drawdown")
             st.caption("백테스트 기준 · 실전 계좌와 별개 · 선택 구간 시작을 0%로 환산")
         else:
@@ -5770,10 +5754,12 @@ with _right:
             st.caption(f"-9% 급락 추가매수 기준가: ${v10_crash_loc_price:,.2f} · 예상 추가금액 {v10_extra_buy_amount:,.0f}원")
     with st.container(border=True):
         st.markdown("#### 💳 현재 계좌")
-        _account_cols = st.columns(3, gap="small")
-        _account_cols[0].metric("현금",f"₩{_asset_cash:,.0f}",f"{_asset_cash_pct:.1f}%",delta_color="off")
-        _account_cols[1].metric("투자 평가액",f"₩{_asset_invested:,.0f}",f"{_asset_invest_pct:.1f}%",delta_color="off")
-        _account_cols[2].metric("총자산",f"₩{_asset_nav:,.0f}")
+        _ac = pd.DataFrame([
+            {"항목":"현금", "평가액":f"₩{_asset_cash:,.0f}", "비중":f"{_asset_cash_pct:.1f}%"},
+            {"항목":"투자 평가액", "평가액":f"₩{_asset_invested:,.0f}", "비중":f"{_asset_invest_pct:.1f}%"},
+            {"항목":"총자산", "평가액":f"₩{_asset_nav:,.0f}", "비중":"100%"},
+        ])
+        st.dataframe(_ac, hide_index=True, use_container_width=True, height=143)
     with st.container(border=True):
         st.markdown("<div id='redesign-slot-preview'></div>",unsafe_allow_html=True)
         st.markdown("#### ▦ 보유 슬롯 미리보기")
@@ -5783,32 +5769,33 @@ with _right:
             _preview = _open[_columns].head(7).copy()
             if "상태" in _preview.columns:
                 _preview["상태"] = _preview["상태"].astype(str).str.replace("LOC(목표수익 매도) 대기","보유",regex=False).str.replace("MOC(종가 매도) 오늘 예정","오늘 매도",regex=False)
-            st.dataframe(_preview,hide_index=True,use_container_width=True,height=min(222,34*(len(_preview)+1)+4))
+            st.dataframe(_preview,hide_index=True,use_container_width=True,height=min(278,40*(len(_preview)+1)+6))
         else:
             st.info("현재 보유 슬롯이 없습니다.")
 
 st.markdown("<div id='redesign-order-management'></div>", unsafe_allow_html=True)
-_bottom_left, _bottom_right = st.columns([1.65, 1], gap="small")
+_bottom_left, _bottom_right = st.columns([1.65, 1], gap="medium")
 with _bottom_left:
     with st.container(border=True):
-        _order_title, _order_help = st.columns([3, 1], vertical_alignment="center")
-        _order_title.markdown("#### 📋 주문 · 슬롯 현황")
-        _order_help.caption("상세 수정은 아래에서")
-        _held = open_positions_display.copy() if isinstance(open_positions_display, pd.DataFrame) else pd.DataFrame()
-        if not _held.empty:
-            _order_columns = [c for c in ["슬롯", "매수일", "매수유형", "매수가", "보유수량", "현재 수익률", "상태"] if c in _held.columns]
-            _order_view = _held[_order_columns].copy()
-            if "매수가" in _order_view.columns:
-                _order_view["매수가"] = _order_view["매수가"].map(lambda x: f"${float(x):,.2f}" if pd.notna(x) and not isinstance(x,str) else str(x))
-            if "상태" in _order_view.columns:
-                _order_view["상태"] = (_order_view["상태"].astype(str)
-                    .str.replace("LOC(목표수익 매도) 대기", "보유", regex=False)
-                    .str.replace("MOC(종가 매도) 오늘 예정", "오늘 매도", regex=False))
-            st.dataframe(_order_view, hide_index=True, use_container_width=True,
-                         height=min(242, 36 * (len(_order_view) + 1) + 8))
+        st.markdown("#### 📋 최근 청산 거래")
+        st.caption("보유 슬롯 미리보기와 중복되지 않도록 최근 종료된 거래만 표시")
+        _recent = live_trades.copy() if isinstance(live_trades, pd.DataFrame) else pd.DataFrame()
+        if not _recent.empty and {"Exit_Date", "Entry_Date"}.issubset(_recent.columns):
+            _recent = _recent.sort_values("Exit_Date", ascending=False).head(8).copy()
+            _recent_cols = [c for c in ["Entry_Date", "Exit_Date", "Entry_Price", "Exit_Price", "Return", "Exit_Type"] if c in _recent.columns]
+            _recent = _recent[_recent_cols].copy()
+            _recent = _recent.rename(columns={
+                "Entry_Date":"매수일", "Exit_Date":"매도일", "Entry_Price":"매수가($)",
+                "Exit_Price":"매도가($)", "Return":"수익률", "Exit_Type":"매도사유"})
+            for _date_col in ["매수일", "매도일"]:
+                if _date_col in _recent.columns:
+                    _recent[_date_col] = pd.to_datetime(_recent[_date_col], errors="coerce").dt.strftime("%Y-%m-%d")
+            if "수익률" in _recent.columns:
+                _recent["수익률"] = pd.to_numeric(_recent["수익률"], errors="coerce").map(lambda v:f"{v:+.2%}" if pd.notna(v) else "-")
+            st.dataframe(_recent, hide_index=True, use_container_width=True,
+                         height=min(294, 35*(len(_recent)+1)+8))
         else:
-            st.info("현재 표시할 보유 슬롯이 없습니다.")
-        st.caption("보기 전용 · 실제 매수가·수량 변경 및 슬롯 제외/복원은 아래 관리 패널에서 진행")
+            st.info("표시할 최근 청산 거래가 없습니다.")
 with _bottom_right:
     with st.container(border=True):
         st.markdown("<div id='redesign-performance'></div>",unsafe_allow_html=True)
