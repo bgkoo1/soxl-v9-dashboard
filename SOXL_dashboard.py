@@ -574,6 +574,33 @@ st.markdown(
     .redesign-statusline b{color:#137653;}
     [data-testid="stSidebar"] [data-testid="stMetric"]{min-height:80px;}
     @media(max-width:1100px){[data-testid="stMetricValue"]{font-size:1rem !important;}.redesign-headline{font-size:1.3rem;}}
+
+    /* Dense responsive layout refinement: unified spacing, no dead right column */
+    .block-container { max-width: 1720px !important; padding: .65rem 1.15rem 1.3rem !important; }
+    [data-testid="stVerticalBlock"] { gap: .55rem !important; }
+    [data-testid="stHorizontalBlock"] { gap: .65rem !important; }
+    [data-testid="stMetric"] { min-height: 92px !important; padding: .7rem .8rem !important; }
+    [data-testid="stMetricLabel"] { font-size: .76rem !important; line-height:1.22 !important; }
+    [data-testid="stMetricValue"] { font-size: clamp(.97rem,1.23vw,1.42rem) !important; white-space:normal !important; overflow-wrap:anywhere; }
+    [data-testid="stMetricDelta"] {font-size:.72rem !important;}
+    [data-testid="stVerticalBlockBorderWrapper"] {padding:.65rem .75rem !important;border-color:#e5eaf3 !important;}
+    [data-testid="stVerticalBlockBorderWrapper"] h4 {font-size:1.02rem !important;margin:.1rem 0 .25rem !important;}
+    [data-testid="stPlotlyChart"] {margin:0 !important;}
+    .redesign-header {margin-bottom: .2rem !important;}
+    .redesign-headline {font-size:1.48rem !important;}
+    .redesign-subline {font-size:.74rem !important;}
+    .redesign-decision {padding:.8rem 1rem !important;min-height:68px !important;margin:0 0 .35rem !important;}
+    .redesign-decision-title {font-size:1.22rem !important;}
+    .redesign-decision-info {font-size:.76rem !important;}
+    .redesign-statusline {margin:.2rem 0 !important;padding:.4rem .65rem !important;font-size:.77rem !important;}
+    .redesign-smalltitle {margin:0 !important;font-size:.75rem !important;}
+    .redesign-info-tag {font-size:.78rem;color:#64748b;}
+    .stCaptionContainer, [data-testid="stCaptionContainer"] {font-size:.72rem !important;line-height:1.35 !important;}
+    [data-testid="stDataFrame"] {border-radius:9px;}
+    [data-testid="stExpander"] {background:#fff !important;border:1px solid #dae4f0 !important;border-radius:12px;}
+    [data-testid="stSidebar"] {min-width:235px;}
+    @media (max-width:1200px){.block-container{padding:.65rem .75rem !important;}}
+    @media (max-width:820px){[data-testid="stMetric"]{min-height:80px !important;} [data-testid="stMetricValue"]{font-size:1.13rem !important;}}
     </style>
     """,
     unsafe_allow_html=True,
@@ -5713,7 +5740,7 @@ with _left:
             if "Close" in _eq.columns and _eq["Close"].notna().all():
                 _eq["SOXL_Return"] = 100 * (_eq["Close"] / float(_eq["Close"].iloc[0]) - 1)
                 _fig.add_trace(go.Scatter(x=_eq["Date"],y=_eq["SOXL_Return"],name="SOXL 단순보유",mode="lines",line=dict(color="#97A4B8",width=1.7)))
-            _fig.update_layout(height=340,margin=dict(l=2,r=5,t=10,b=5),paper_bgcolor="white",plot_bgcolor="white",hovermode="x unified",legend=dict(orientation="h",y=1.12,x=0),xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
+            _fig.update_layout(height=270,margin=dict(l=2,r=5,t=10,b=5),paper_bgcolor="white",plot_bgcolor="white",hovermode="x unified",legend=dict(orientation="h",y=1.12,x=0),xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
             st.plotly_chart(_fig,use_container_width=True,config={"displayModeBar":False},key="redesign_main_eq")
             st.markdown("<div class='redesign-smalltitle'>고점 대비 낙폭 (Drawdown)</div>",unsafe_allow_html=True)
             # For the actual historical drawdown, preserve the HWM of the full backtest.
@@ -5722,9 +5749,9 @@ with _left:
             _global_curve["Drawdown"] = (_global_curve["Equity"]/_global_curve["Equity"].cummax()-1)*100
             _d = _global_curve[_global_curve["Date"].isin(_eq["Date"])].copy()
             _dd = go.Figure(go.Scatter(x=_d["Date"],y=_d["Drawdown"],name="Drawdown",mode="lines",line=dict(color="#F04461",width=1.6),fill="tozeroy",fillcolor="rgba(240,68,97,.13)"))
-            _dd.update_layout(height=175,margin=dict(l=2,r=5,t=5,b=3),paper_bgcolor="white",plot_bgcolor="white",showlegend=False,xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
+            _dd.update_layout(height=118,margin=dict(l=2,r=5,t=5,b=3),paper_bgcolor="white",plot_bgcolor="white",showlegend=False,xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
             st.plotly_chart(_dd,use_container_width=True,config={"displayModeBar":False},key="redesign_drawdown")
-            st.caption("백테스트 자산곡선 · 실전 총자산과 구분. 표시 구간 시작일을 0%로 환산")
+            st.caption("백테스트 기준 · 실전 계좌와 별개 · 선택 구간 시작을 0%로 환산")
         else:
             st.info("자산곡선 데이터가 없습니다.")
 
@@ -5738,16 +5765,15 @@ with _right:
         _r1 = ("유예" if v11_pause_now else "정상") if strategy_mode.startswith("V11") else "V11 전용"
         _risk = "유예" if latest_risk_state else "정상"
         st.markdown(f"<div class='redesign-statusline'><span>Risk B <b>{_risk}</b></span><span>R1 <b>{_r1}</b></span></div>",unsafe_allow_html=True)
-        st.metric("예상 기본 매수금액",f"₩{float(next_buy_amount):,.0f}",help="확정 일봉·기존 가용현금 기준. 실제 주문 여부 및 가격은 상세 주문에서 확인")
+        st.markdown(f"<div class='redesign-info-tag'><b>예상 기본 매수</b> &nbsp; ₩{float(next_buy_amount):,.0f}</div>",unsafe_allow_html=True)
         if strategy_mode.startswith(("V10","V11")) and v10_crash_loc_price is not None:
             st.caption(f"-9% 급락 추가매수 기준가: ${v10_crash_loc_price:,.2f} · 예상 추가금액 {v10_extra_buy_amount:,.0f}원")
     with st.container(border=True):
         st.markdown("#### 💳 현재 계좌")
-        _account_cols = st.columns(3,gap="small")
+        _account_cols = st.columns(3, gap="small")
         _account_cols[0].metric("현금",f"₩{_asset_cash:,.0f}",f"{_asset_cash_pct:.1f}%",delta_color="off")
         _account_cols[1].metric("투자 평가액",f"₩{_asset_invested:,.0f}",f"{_asset_invest_pct:.1f}%",delta_color="off")
         _account_cols[2].metric("총자산",f"₩{_asset_nav:,.0f}")
-        st.caption("확정 종가 기준 추정치 · 실시간 평가액과 다를 수 있음")
     with st.container(border=True):
         st.markdown("<div id='redesign-slot-preview'></div>",unsafe_allow_html=True)
         st.markdown("#### ▦ 보유 슬롯 미리보기")
@@ -5757,17 +5783,32 @@ with _right:
             _preview = _open[_columns].head(7).copy()
             if "상태" in _preview.columns:
                 _preview["상태"] = _preview["상태"].astype(str).str.replace("LOC(목표수익 매도) 대기","보유",regex=False).str.replace("MOC(종가 매도) 오늘 예정","오늘 매도",regex=False)
-            st.dataframe(_preview,hide_index=True,use_container_width=True,height=min(318,36*(len(_preview)+1)))
+            st.dataframe(_preview,hide_index=True,use_container_width=True,height=min(222,34*(len(_preview)+1)+4))
         else:
             st.info("현재 보유 슬롯이 없습니다.")
 
-st.markdown("<div id='redesign-order-management'></div>",unsafe_allow_html=True)
-_bottom_left, _bottom_right = st.columns([1.7,1],gap="small")
+st.markdown("<div id='redesign-order-management'></div>", unsafe_allow_html=True)
+_bottom_left, _bottom_right = st.columns([1.65, 1], gap="small")
 with _bottom_left:
     with st.container(border=True):
-        st.markdown("#### 📋 상세 주문 · 슬롯 편집 · 실제 체결가 관리")
-        st.caption("실제 체결가 수정, 미매수 제외 및 복원은 이 패널에서 기존과 동일하게 작동합니다.")
-        render_compact_trading_dashboard()
+        _order_title, _order_help = st.columns([3, 1], vertical_alignment="center")
+        _order_title.markdown("#### 📋 주문 · 슬롯 현황")
+        _order_help.caption("상세 수정은 아래에서")
+        _held = open_positions_display.copy() if isinstance(open_positions_display, pd.DataFrame) else pd.DataFrame()
+        if not _held.empty:
+            _order_columns = [c for c in ["슬롯", "매수일", "매수유형", "매수가", "보유수량", "현재 수익률", "상태"] if c in _held.columns]
+            _order_view = _held[_order_columns].copy()
+            if "매수가" in _order_view.columns:
+                _order_view["매수가"] = _order_view["매수가"].map(lambda x: f"${float(x):,.2f}" if pd.notna(x) and not isinstance(x,str) else str(x))
+            if "상태" in _order_view.columns:
+                _order_view["상태"] = (_order_view["상태"].astype(str)
+                    .str.replace("LOC(목표수익 매도) 대기", "보유", regex=False)
+                    .str.replace("MOC(종가 매도) 오늘 예정", "오늘 매도", regex=False))
+            st.dataframe(_order_view, hide_index=True, use_container_width=True,
+                         height=min(242, 36 * (len(_order_view) + 1) + 8))
+        else:
+            st.info("현재 표시할 보유 슬롯이 없습니다.")
+        st.caption("보기 전용 · 실제 매수가·수량 변경 및 슬롯 제외/복원은 아래 관리 패널에서 진행")
 with _bottom_right:
     with st.container(border=True):
         st.markdown("<div id='redesign-performance'></div>",unsafe_allow_html=True)
@@ -5791,9 +5832,14 @@ with _bottom_right:
             _names=[v[0] for v in _bar_data]
             _vals=[v[1] for v in _bar_data]
             _bars=go.Figure(go.Bar(y=_names,x=_vals,orientation="h",marker_color=["#2563EB","#A5B4C8","#A5B4C8","#A5B4C8"],text=[f"{v:+.1f}%" for v in _vals],textposition="outside",cliponaxis=False))
-            _bars.update_layout(height=205,margin=dict(l=4,r=46,t=5,b=8),paper_bgcolor="white",plot_bgcolor="white",showlegend=False,xaxis=dict(visible=False),yaxis=dict(autorange="reversed",title=None))
+            _bars.update_layout(height=150,margin=dict(l=4,r=46,t=5,b=8),paper_bgcolor="white",plot_bgcolor="white",showlegend=False,xaxis=dict(visible=False),yaxis=dict(autorange="reversed",title=None))
             st.plotly_chart(_bars,use_container_width=True,config={"displayModeBar":False},key="redesign_compare_bars")
         st.caption("동일 기간 전략별 백테스트 비교 · 원금 대비 단순 누적수익률")
+
+st.markdown("<div id='redesign-manage-details'></div>", unsafe_allow_html=True)
+with st.expander("✏️ 실제 체결가 · 보유수량 · 슬롯 제외/복원 · 주문 상세 관리", expanded=False):
+    st.caption("실전 데이터 변경 및 암호화 저장 기능 · 기존 주문 처리 로직 유지")
+    render_compact_trading_dashboard()
 
 st.markdown("<div id='redesign-analysis'></div>",unsafe_allow_html=True)
 with st.expander("↗ 상세 백테스트 분석 · 거래내역 · 연도별 성과", expanded=False):
