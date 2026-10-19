@@ -520,6 +520,21 @@ st.markdown(
        .soxl-lead {padding:1rem;}
        .soxl-lead-title {font-size:1.25rem;}
     }
+
+    /* V2: new overview panels and a clearer working hierarchy */
+    .overview-signal {
+      border:1px solid #dce5f1; border-radius:15px; padding:1.2rem 1.25rem;
+      background:#fff; min-height:155px; margin-bottom:.8rem;
+    }
+    .overview-signal-buy {border-left:6px solid #159a69; background:#f2fbf6;}
+    .overview-signal-danger {border-left:6px solid #d64d5c; background:#fff5f6;}
+    .overview-signal-neutral {border-left:6px solid #5182d4; background:#f5f8ff;}
+    .overview-signal-small {font-size:.84rem;color:#63758d;font-weight:650}
+    .overview-signal-title {font-size:1.55rem;font-weight:850;color:#15365e;margin:.35rem 0;}
+    .overview-signal-desc {font-size:.9rem;color:#506780;line-height:1.6;}
+    div[data-testid="stVerticalBlock"] > div:has(>div[data-testid="stPlotlyChart"]) {
+      border-radius:14px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -5621,6 +5636,94 @@ def render_compact_trading_dashboard():
             f"{BASE_HOLDING_DAYS if not is_custom else holding_days}번째 미국 거래일입니다."
         )
 
+
+
+# ============================================================
+# FIRST-SCREEN OVERVIEW: a concise control center
+# This section only reads existing computed state.
+# ============================================================
+st.markdown("### 한눈에 보는 실전 계좌")
+overview_nav = float(live_nav)
+overview_cash = float(usable_cash)
+overview_invested = max(0.0, overview_nav - overview_cash)
+overview_cash_pct = (overview_cash / overview_nav * 100.0) if overview_nav > 0 else 0.0
+overview_exposure_pct = (overview_invested / overview_nav * 100.0) if overview_nav > 0 else 0.0
+
+ov1, ov2, ov3, ov4 = st.columns(4, gap="small")
+ov1.metric("확정 총자산 NAV", f"{overview_nav:,.0f}원")
+ov2.metric("현금 · 비중", f"{overview_cash:,.0f}원", f"{overview_cash_pct:.1f}%", delta_color="off")
+ov3.metric("투자 비중", f"{overview_exposure_pct:.1f}%", f"{overview_invested:,.0f}원", delta_color="off")
+ov4.metric("보유 슬롯", f"{live_open_count} / {max_slots_for_live}", f"잔여 {max(0, max_slots_for_live - live_open_count)}개", delta_color="off")
+st.caption("확정 일봉과 저장된 실전 보유 정보 기준 · 실시간 가격은 아래 운용 상세에서 별도 제공")
+
+overview_left, overview_right = st.columns([1.72, 1], gap="medium")
+with overview_left:
+    st.markdown("#### 📈 누적 자산 추이")
+    overview_equity = comparison_results.get(strategy_short_name, {}).get("equity", pd.DataFrame())
+    if isinstance(overview_equity, pd.DataFrame) and not overview_equity.empty and {"Date", "Equity"}.issubset(overview_equity.columns):
+        _ov_eq = overview_equity[["Date", "Equity"]].dropna().copy()
+        _ov_eq["Date"] = pd.to_datetime(_ov_eq["Date"])
+        _ov_eq = _ov_eq.sort_values("Date")
+        ov_period = st.segmented_control(
+            "차트 기간",
+            options=["1년", "3년", "전체"],
+            default="3년",
+            key="soxl_overview_chart_period",
+            label_visibility="collapsed",
+        )
+        if ov_period != "전체" and not _ov_eq.empty:
+            yrs = 1 if ov_period == "1년" else 3
+            _ov_eq = _ov_eq[_ov_eq["Date"] >= (_ov_eq["Date"].max() - pd.DateOffset(years=yrs))]
+        ov_fig = go.Figure()
+        ov_fig.add_trace(go.Scatter(
+            x=_ov_eq["Date"], y=_ov_eq["Equity"],
+            mode="lines", name=strategy_short_name,
+            line=dict(color="#2563eb", width=2.7),
+            fill="tozeroy", fillcolor="rgba(37,99,235,0.08)",
+            hovertemplate="%{x|%Y-%m-%d}<br>자산 %{y:,.0f}원<extra></extra>",
+        ))
+        ov_fig.update_layout(
+            height=330, margin=dict(l=12, r=10, t=8, b=15),
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            showlegend=False, hovermode="x unified",
+            xaxis=dict(showgrid=False, title=None),
+            yaxis=dict(gridcolor="rgba(148,163,184,0.16)", tickformat=",.0f", title=None),
+            font=dict(color="#52657b"),
+        )
+        st.plotly_chart(ov_fig, use_container_width=True, config={"displayModeBar": False}, key="soxl_overview_equity_chart")
+        st.caption("전략 백테스트 자산곡선 · 실전 계좌 NAV와 구분하여 표시")
+    else:
+        st.info("선택 전략의 자산곡선 데이터가 없습니다.")
+
+with overview_right:
+    st.markdown("#### 🧭 오늘의 판단")
+    _signal_label = "매수 검토" if next_action.startswith("BUY") else ("데이터 확인 필요" if next_action.startswith("CHECK DATA") else "신규 매수 대기")
+    _signal_tone = "buy" if next_action.startswith("BUY") else ("danger" if next_action.startswith("CHECK DATA") else "neutral")
+    _signal_reason = (
+        "기본 매수 신호가 있습니다. 주문 전 시세와 가용현금을 확인하세요."
+        if next_action.startswith("BUY")
+        else ("일봉 데이터의 최신성을 확인하세요." if next_action.startswith("CHECK DATA") else "오늘은 신규 매수 신호가 없거나 매수가 제한됩니다.")
+    )
+    st.markdown(
+        f'<div class="overview-signal overview-signal-{_signal_tone}">'
+        f'<div class="overview-signal-small">다음 거래일 · {action_session.date()}</div>'
+        f'<div class="overview-signal-title">{_signal_label}</div>'
+        f'<div class="overview-signal-desc">{_signal_reason}</div>'
+        f'</div>', unsafe_allow_html=True,
+    )
+    st.markdown("##### 핵심 방어 규칙")
+    _rb_text = "매수 유예" if latest_risk_state else "매수 허용"
+    _r1_text = "매수 유예" if v11_pause_now else "매수 허용"
+    st.markdown(f"**Risk B** · {_rb_text}")
+    if strategy_mode.startswith("V11"):
+        st.markdown(f"**R1** · {_r1_text} (연속 하락 {v11_down_streak}일)")
+    else:
+        st.caption("R1은 V11에서만 적용됩니다.")
+    st.markdown(f"**현재 전략** · {strategy_short_name}")
+    st.caption("판단 근거 및 예상 주문수량은 아래 '상세 주문·슬롯 관리'에서 확인하세요.")
+
+st.divider()
+st.markdown("### 🛠️ 상세 주문 · 슬롯 관리")
 
 render_compact_trading_dashboard()
 
