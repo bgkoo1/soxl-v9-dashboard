@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "SOXL_dashboard.py"
       - "SOXL_V11_backtest.py"
       - "SOXL_V10_backtest.py"
       - "SOXL_V9_backtest.py"
