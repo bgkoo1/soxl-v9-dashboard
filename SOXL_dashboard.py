@@ -469,6 +469,57 @@ st.markdown(
             padding-right: 0.45rem;
         }
     }
+
+    /* SOXL UI refresh: presentation only, no order/state changes */
+    :root { --soxl-navy:#142d50; --soxl-blue:#2563eb; --soxl-line:#e1e8f1; }
+    .stApp { background: #f4f7fb; }
+    [data-testid="stHeader"] { background: rgba(244,247,251,0.93); }
+    [data-testid="stSidebar"] { background: #edf2f8; border-right:1px solid var(--soxl-line); }
+    .block-container { max-width: 1760px; padding-top: 1.05rem; }
+    h1,h2,h3 { color: #173253; letter-spacing:-0.025em; }
+    h1 { font-weight:800 !important; font-size: clamp(1.75rem,2.3vw,2.35rem) !important; }
+    h2,h3 { font-weight:750 !important; }
+    [data-testid="stMetric"] {
+        background:#fff; border:1px solid var(--soxl-line);
+        border-radius:14px; padding:1rem 1.1rem; min-height:112px;
+        box-shadow:0 3px 12px rgba(20,45,80,0.035);
+    }
+    [data-testid="stMetricLabel"] { color:#64748b; font-weight:650; }
+    [data-testid="stMetricValue"] { color:#142d50; font-weight:800; letter-spacing:-0.035em; }
+    [data-testid="stMetricDelta"] { font-weight:650; }
+    [data-testid="stVerticalBlockBorderWrapper"] > div {
+        border-color:var(--soxl-line);
+    }
+    [data-testid="stDataFrame"],[data-testid="stDataEditor"] {
+        border:1px solid var(--soxl-line); border-radius:12px; background:#fff;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        background:#eaf0f8; padding:.3rem; border-radius:12px; gap:.25rem;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius:9px; color:#53677e; font-weight:650; min-height:42px;
+        padding-left:1rem; padding-right:1rem;
+    }
+    .stTabs [aria-selected="true"] { background:#fff; color:#1e5ac6; box-shadow:0 1px 5px rgba(20,45,80,.09); }
+    .stButton > button[kind="primary"] {
+        background:#205ac9; border-color:#205ac9; border-radius:10px; font-weight:700;
+    }
+    .stButton > button[kind="secondary"], .stDownloadButton > button {
+        border-radius:10px; border:1px solid #d6e0ec; background:#fff; font-weight:650;
+    }
+    div[data-testid="stExpander"] { border:1px solid var(--soxl-line); background:#fff; border-radius:12px; }
+    .stAlert { border-radius:12px; }
+    hr { border-color:#e4eaf2 !important; margin:1.1rem 0 !important; }
+    .soxl-lead { background:linear-gradient(108deg,#153355,#244e84);
+        padding:1.25rem 1.5rem; border-radius:16px; color:#fff;
+        margin-bottom:1.1rem; box-shadow:0 5px 22px rgba(23,52,87,.13); }
+    .soxl-lead-title { color:#fff; font-size:1.55rem; font-weight:800; letter-spacing:-.025em; }
+    .soxl-lead-note { color:#d9e6f8; font-size:.9rem; margin-top:.28rem; }
+    @media(max-width:900px) {
+       [data-testid="stMetric"] {padding:.75rem; min-height:90px;}
+       .soxl-lead {padding:1rem;}
+       .soxl-lead-title {font-size:1.25rem;}
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -479,11 +530,8 @@ st.markdown(
 # TITLE
 # ============================================================
 
-st.title("📈 SOXL Quant Dashboard")
-
-st.caption(
-    "실전 운용과 백테스트 Lab을 분리했습니다. 백테스트 Lab의 설정 변경은 실제 투자 데이터에 반영되지 않습니다."
-)
+st.markdown("""<div class="soxl-lead"><div class="soxl-lead-title">SOXL 퀀트투자 대시보드</div><div class="soxl-lead-note">실전 운용 · 전략별 백테스트 · 보유 슬롯 관리</div></div>""", unsafe_allow_html=True)
+st.caption("실전 계좌와 백테스트 Lab은 분리되어 있습니다. 백테스트 설정은 실제 보유 슬롯이나 주문에 반영되지 않습니다.")
 
 
 # ============================================================
@@ -3461,7 +3509,7 @@ def _lab_build_result(full_price_df, start_value, end_value, capital, strategy_n
 
 
 def render_backtest_lab(full_price_df):
-    st.subheader("🧪 Backtest Lab(백테스트 전용)")
+    st.subheader("🧪 전략 백테스트 · 연구 전용")
     st.info(
         "이 페이지는 SOXL 시장 데이터와 전략 엔진만 사용합니다. "
         "실제 보유수량·실제 체결가·입출금·수동거래·live_portfolio.enc는 읽거나 수정하지 않습니다."
@@ -4661,7 +4709,7 @@ c3.info(
 # ============================================================
 
 st.divider()
-st.subheader("🧭 Trading Dashboard(오늘의 운용 현황)")
+st.subheader("🧭 오늘의 매매 판단 · 계좌 현황")
 
 # 행동 문구는 기존 전략 계산 결과를 그대로 사용합니다.
 if next_action.startswith("BUY"):
@@ -5124,12 +5172,12 @@ def render_compact_trading_dashboard():
 
     # 핵심 포트폴리오 숫자는 한 줄로 압축합니다.
     s1, s2, s3, s4, s5, s6 = st.columns(6)
-    s1.metric("Confirmed NAV(확정 NAV)", f"{live_nav:,.0f}원", help="V9/V10에서는 실제 보유수량과 누적 추가 입출금을 반영합니다.")
-    s2.metric("Live NAV(실시간 NAV)", f"{realtime_nav:,.0f}원")
-    s3.metric("Cash(사용가능 현금)", f"{usable_cash:,.0f}원", help="실제 보유수량 보정과 추가 입출금을 반영한 사용가능 현금입니다.")
-    s4.metric("Net Deposit(추가 순입금)", f"{net_external_cashflow:+,.0f}원" if strategy_mode.startswith(("V9", "V10", "V11")) else "-")
-    s5.metric("Slots(보유 슬롯)", f"{live_open_count} / {max_slots_for_live}")
-    s6.metric("MOC Today(오늘 MOC)", f"{moc_today_count}건")
+    s1.metric("확정 총자산 NAV", f"{live_nav:,.0f}원", help="V9/V10에서는 실제 보유수량과 누적 추가 입출금을 반영합니다.")
+    s2.metric("실시간 추정 자산", f"{realtime_nav:,.0f}원")
+    s3.metric("사용 가능 현금", f"{usable_cash:,.0f}원", help="실제 보유수량 보정과 추가 입출금을 반영한 사용가능 현금입니다.")
+    s4.metric("누적 순입금", f"{net_external_cashflow:+,.0f}원" if strategy_mode.startswith(("V9", "V10", "V11")) else "-")
+    s5.metric("보유 슬롯", f"{live_open_count} / {max_slots_for_live}")
+    s6.metric("오늘 종가주문", f"{moc_today_count}건")
 
     signal_date_text = (
         str(signal_source_date.date())
@@ -5249,7 +5297,7 @@ def render_compact_trading_dashboard():
     if strategy_mode.startswith(("V9", "V10", "V11")):
         v9_open_positions = live_result.get("open_positions", [])
 
-    st.subheader("📦 Open Positions(현재 보유 슬롯)")
+    st.subheader("📦 현재 보유 슬롯 · 체결 정보")
 
     if strategy_mode.startswith(("V9", "V10", "V11")):
         realtime_positions = build_v9_open_positions_table(
@@ -5583,7 +5631,7 @@ render_compact_trading_dashboard()
 st.divider()
 
 st.subheader(
-    f"핵심 성과 · {strategy_short_name}"
+    f"📊 전략 성과 요약 · {strategy_short_name}"
 )
 
 comparison_name = st.selectbox(
@@ -5643,17 +5691,17 @@ tab6, tab1, tab2, tab3, tab4, tab5 = (
     st.tabs(
         [
 
-            "📋 Trades(거래내역)",
+            "📋 거래내역",
 
-            "📈 Equity Curve(자산곡선)",
+            "📈 자산곡선",
 
-            "📉 Risk(위험)",
+            "📉 위험 분석",
 
-            "⏱ TIME(기한 만료 매도)",
+            "⏱ 보유기간 분석",
 
-            "🌦 Market State(시장상태)",
+            "🌦 시장 상태",
 
-            "📅 Yearly(연도별)",
+            "📅 연도별 성과",
 
         ]
     )
