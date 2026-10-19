@@ -5545,7 +5545,7 @@ def render_compact_trading_dashboard():
                 "남은 거래일": st.column_config.TextColumn("남은일", width="small"),
                 "상태": st.column_config.TextColumn("상태", width="medium"),
             },
-            key="v9_open_positions_editor",
+            key="v9_open_positions_editor_" + __import__("hashlib").sha256("|".join(sorted(editor_table["_key"].astype(str))).encode()).hexdigest()[:12],
         )
 
         save_c1, save_c2 = st.columns([1, 1])
