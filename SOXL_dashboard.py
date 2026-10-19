@@ -5326,11 +5326,90 @@ def render_compact_trading_dashboard():
                 _label = f"슬롯 {_slot} · {_date} · {_buy_type} · {_price}"
                 delete_options[_label] = _key
 
-            # Important: live positions are derived dynamically from the model.
-            # A changing selectbox can target a different saved key after a rerun.
-            # Disable destructive deletion until a stable transaction-ledger editor exists.
+            # Stable identifier-based exclusion. Never infer identity from row number.
+            # Only the explicitly confirmed position_id is added to excluded_positions.
             if delete_options:
-                st.info("실전 슬롯 직접 삭제는 안전 점검 중 일시 중단했습니다. 미매수 슬롯은 아래 복원/관리 기능을 이용하세요.")
+                active_positions_by_key = {
+                    v9_position_key(pos): pos for pos in v9_open_positions
+                    if v9_position_key(pos) not in set(_sanitize_v9_excluded_positions(
+                        st.session_state.get("v9_excluded_positions", [])))
+                }
+                active_rows_by_key = {
+                    str(row["_key"]): row for _, row in position_table.iterrows()
+                    if str(row["_key"]) in active_positions_by_key
+                }
+                # Give the widget a new identity whenever the actual slot roster changes:
+                # Streamlit must not retain an old selectbox index after a slot disappears.
+                roster_token = "|".join(sorted(active_rows_by_key))
+                roster_hash = __import__("hashlib").sha256(roster_token.encode()).hexdigest()[:12]
+                with st.expander("🗑️ 실제 미매수 슬롯 제외", expanded=False):
+                    st.caption("실제로 체결되지 않은 슬롯 한 건만 제외합니다. "
+                               "매수일과 슬롯 ID를 확인한 뒤 저장하며, 기존 수량·체결가는 보존됩니다.")
+                    with st.form(f"exclude_slot_form_{roster_hash}", clear_on_submit=True):
+                        candidate_keys = list(active_rows_by_key.keys())
+                        selected_key = st.selectbox(
+                            "제외할 슬롯 (매수일 · 유형 · 전략가 · ID)",
+                            candidate_keys,
+                            format_func=lambda key: (
+                                f"{active_rows_by_key[key]['매수일']} · "
+                                f"{active_rows_by_key[key]['매수유형']} · "
+                                f"{active_rows_by_key[key]['전략 매수가']} · ID {key}"
+                            ),
+                        )
+                        selected_position = active_positions_by_key[selected_key]
+                        expected_date = pd.Timestamp(selected_position["entry_date"]).date().isoformat()
+                        st.info(f"선택한 슬롯: {expected_date} / "
+                                f"ID {selected_key} / "
+                                f"전략 매수가 ${float(selected_position['entry_price']):.4f}")
+                        date_confirmation = st.text_input(
+                            "선택한 슬롯의 매수일을 입력하세요 (YYYY-MM-DD)",
+                            placeholder="예: 2026-10-16",
+                        )
+                        confirmation = st.checkbox(
+                            "이 슬롯은 실제로 매수하지 않았으며, 다른 보유 슬롯은 제외하지 않습니다."
+                        )
+                        apply_exclusion = st.form_submit_button(
+                            "확인한 슬롯 1건만 제외", type="primary",
+                            disabled=not portfolio_persistence_enabled(),
+                        )
+                    if apply_exclusion:
+                        try:
+                            if date_confirmation.strip() != expected_date or not confirmation:
+                                raise ValueError("슬롯 매수일 확인 또는 미매수 확인이 일치하지 않습니다.")
+                            # Validate immutable ID -> entry date against the live model again.
+                            candidates = [p for p in v9_open_positions
+                                          if v9_position_key(p) == selected_key]
+                            if len(candidates) != 1 or (
+                                pd.Timestamp(candidates[0]["entry_date"]).date().isoformat()
+                                != expected_date
+                            ):
+                                raise ValueError("화면과 실제 슬롯 ID가 일치하지 않습니다. 새로고침 후 다시 선택하세요.")
+                            current, status = _load_persisted_v9_state()
+                            if status != "GitHub 암호화 저장값 불러옴":
+                                raise ValueError(f"최신 저장 내역을 읽지 못했습니다: {status}")
+                            latest_excluded = set(current["excluded_positions"])
+                            if selected_key in latest_excluded:
+                                raise ValueError("이미 제외된 슬롯입니다. 화면을 새로고침하세요.")
+                            latest_excluded.add(selected_key)
+                            # Preserve EVERY other persisted record and existing actual execution values.
+                            ok, msg = _save_persisted_v9_state(
+                                quantity_map=current["quantities"],
+                                entry_prices=current["entry_prices"],
+                                cashflows=current["cashflows"],
+                                trade_overrides=current["trade_overrides"],
+                                manual_trades=current["manual_trades"],
+                                settings=current["settings"],
+                                excluded_positions=sorted(latest_excluded),
+                            )
+                            if not ok:
+                                raise ValueError(msg)
+                            st.session_state["v9_quantity_overrides"] = current["quantities"]
+                            st.session_state["v9_entry_price_overrides"] = current["entry_prices"]
+                            st.session_state["v9_excluded_positions"] = sorted(latest_excluded)
+                            st.success(f"{expected_date} / {selected_key} 슬롯 한 건만 제외했습니다.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"미매수 슬롯 제외 실패: {exc}")
 
             with st.expander("🛠️ 잘못 삭제된 10월 8일 보유 슬롯 복원", expanded=False):
                 st.caption("GitHub의 암호화된 삭제 전 이력을 읽어 2026-10-08 슬롯 한 건만 복원합니다. "
@@ -5409,7 +5488,6 @@ def render_compact_trading_dashboard():
         # 실제 보유수량과 실제 매수체결가는 Open Positions 표에서 직접 수정합니다.
         editor_table = position_table.copy()
         excluded_now = set(_sanitize_v9_excluded_positions(st.session_state.get("v9_excluded_positions", [])))
-        editor_table["미매수 처리"] = False
         editor_table["보유수량"] = (
             editor_table["보유수량"]
             .astype(str)
@@ -5443,7 +5521,7 @@ def render_compact_trading_dashboard():
             styled_editor,
             use_container_width=True,
             hide_index=True,
-            disabled=[c for c in editor_table.columns if c not in {"보유수량", "매수가", "미매수 처리"}],
+            disabled=[c for c in editor_table.columns if c not in {"보유수량", "매수가"}],
             column_config={
                 "_key": None,
                 "슬롯": st.column_config.NumberColumn("슬롯", width="small"),
@@ -5466,9 +5544,6 @@ def render_compact_trading_dashboard():
                 "MOC 예정일": st.column_config.TextColumn("MOC일", width="small"),
                 "남은 거래일": st.column_config.TextColumn("남은일", width="small"),
                 "상태": st.column_config.TextColumn("상태", width="medium"),
-                "미매수 처리": st.column_config.CheckboxColumn(
-                    "🗑️ 미매수", help="실제로 매수하지 않은 슬롯이면 체크하세요. 저장 후 실전 Open Positions에서 제외됩니다.", width="small"
-                ),
             },
             key="v9_open_positions_editor",
         )
@@ -5487,8 +5562,6 @@ def render_compact_trading_dashboard():
                 if key:
                     qty = max(0, int(round(float(row["보유수량"]))))
                     merged_map[key] = qty
-                    if bool(row.get("미매수 처리", False)):
-                        excluded_set.add(key)
                     actual_entry = float(row["매수가"])
                     if actual_entry <= 0:
                         st.error("실제 매수체결가는 0보다 커야 합니다.")
