@@ -829,6 +829,30 @@ div.st-key-order_table_tabs [data-baseweb="tab-border"]{background:transparent!i
  .action-essential-item{padding:8px!important;min-height:80px!important;}
  .action-essential-item strong{font-size:1.13rem!important;}
 }
+
+/* V11 visual spacing consistency: 1.5x title-to-content gaps */
+.ref-panel-head{font-size:1.03rem!important;line-height:1.5!important;margin-bottom:12px!important;min-height:25px!important;}
+.ref-chart-subtitle{font-size:1.03rem!important;line-height:1.5!important;font-weight:800!important;color:#162b51!important;margin:16px 0 12px!important;}
+/* In Streamlit the markdown title's parent also has spacing, keep adjacent elements even. */
+.ref-panel-head + .ref-table-wrap{margin-top:4px!important;}
+.ref-panel-head + .ref-account-grid{margin-top:4px!important;}
+/* Order-tab selection: selected text bold, zero painted background or shadow. */
+.st-key-order_table_tabs [data-baseweb="tab-list"],
+.st-key-order_table_tabs [data-baseweb="tab"],
+.st-key-order_table_tabs [data-baseweb="tab"][aria-selected="true"],
+.st-key-order_table_tabs [data-baseweb="tab"]:hover,
+.st-key-order_table_tabs [data-baseweb="tab"] [data-testid="stMarkdownContainer"],
+.st-key-order_table_tabs button[role="tab"],
+.st-key-order_table_tabs button[role="tab"][aria-selected="true"]{
+ background:transparent!important;background-color:transparent!important;background-image:none!important;
+ box-shadow:none!important;border-radius:0!important;
+}
+.st-key-order_table_tabs [role="tab"]{font-weight:450!important;color:#687890!important;}
+.st-key-order_table_tabs [role="tab"][aria-selected="true"]{font-weight:850!important;color:#172d51!important;}
+.st-key-order_table_tabs [role="tab"] p,
+.st-key-order_table_tabs [role="tab"] span{font-weight:inherit!important;color:inherit!important;}
+.st-key-order_table_tabs [data-baseweb="tab-highlight"],
+.st-key-order_table_tabs [data-baseweb="tab-border"]{background:transparent!important;border-color:transparent!important;}
     </style>
     """,
     unsafe_allow_html=True,
