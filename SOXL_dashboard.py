@@ -581,16 +581,67 @@ st.markdown(
     div[data-testid="stButton"] button {font-weight:700;border-radius:9px;min-height:39px;}
     .redesign-smalltitle {font-size:.83rem;font-weight:750;color:#273e60;margin:6px 0;}
     .redesign-date {color:#68788d;font-size:.76rem;}
-    .redesign-decision {border-radius:11px;padding:13px 15px;margin:3px 0 8px;min-height:76px;}
-    .redesign-buy {background:linear-gradient(120deg,#d5e5ff,#edf4ff);}
-    .redesign-wait {background:linear-gradient(120deg,#e6efff,#f4f8ff);}
-    .redesign-decision-title {font-size:1.4rem;color:#1455c4;font-weight:850;line-height:1.3;}
-    .redesign-decision-info {font-size:.78rem;color:#506581;margin-top:5px;}
-    .redesign-statusline {display:flex;justify-content:space-between;gap:8px;padding:9px 12px;margin:5px 0 7px;border-radius:8px;background:#f5f8fd;color:#586c85;font-size:.81rem;}
-    .redesign-statusline b {color:#12784c;}
-    .redesign-info-tag {font-size:.83rem;color:#465d7c;line-height:1.45;}
+    .redesign-decision {border-radius:14px;padding:16px 16px;margin:4px 0 10px;min-height:100px;border:1px solid #f3c4cd;}
+    .redesign-buy {background:linear-gradient(135deg,#ffe8ec,#fff5f7);}
+    .redesign-wait {background:linear-gradient(135deg,#fff2f4,#fff8f9);}
+    .redesign-decision-title {font-size:1.55rem;color:#cc2343;font-weight:850;line-height:1.25;}
+    .redesign-decision-info {font-size:.82rem;color:#7b4b58;margin-top:5px;}
+    .redesign-statusline {display:flex;justify-content:space-between;gap:8px;padding:10px 12px;margin:6px 0 8px;border-radius:9px;background:#fff6f7;color:#7b6270;font-size:.83rem;border:1px solid #f4d6dc;}
+    .redesign-statusline b {color:#1e8f5a;}
+    .redesign-info-tag {font-size:.84rem;color:#5f5360;line-height:1.45;}
+    .pair-note {font-size:.78rem;color:#7a8798;margin-top:8px;}
+    .cta-fill button {min-height:56px !important; height:56px !important;}
     @media(max-width:1400px){.soxl-kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr));}.soxl-kpi{height:100px;}.soxl-kpi-label{margin-bottom:7px;}.soxl-kpi-description{margin-top:7px;}}
     @media(max-width:900px){.block-container{padding:.85rem !important;}.redesign-headline{font-size:1.34rem;}.soxl-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.soxl-kpi-value{font-size:1.15rem;}}
+
+    /* Polished fintech visual system: desktop alignment and compact hierarchy */
+    :root { --ui-navy:#172b4e;--ui-blue:#2063e7;--ui-edge:#e4eaf2;--ui-soft:#f6f8fc; }
+    .stApp {background:#f5f8fc!important;color:#172b4e!important;}
+    .block-container {max-width:1680px!important;padding:0.68rem 1.25rem 2.3rem!important;}
+    [data-testid="stSidebar"] {background:#f8faff!important;}
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {gap:.48rem!important;}
+    .redesign-header {margin:1px 0 9px!important;min-height:42px!important;}
+    .redesign-headline {font-size:1.62rem!important;line-height:1.1!important;}
+    .redesign-subline {font-size:.78rem!important;margin-top:3px!important;}
+    .soxl-kpi-grid {gap:9px!important;margin:11px 0 13px!important;}
+    .soxl-kpi {height:109px!important;padding:12px 14px!important;box-shadow:0 2px 10px rgba(24,45,75,.035)!important;}
+    .soxl-kpi-label {font-size:.81rem!important;margin-bottom:8px!important;}
+    .soxl-kpi-value {font-size:clamp(1.02rem,1.43vw,1.48rem)!important;line-height:1.17!important;letter-spacing:-.04em;}
+    .soxl-kpi-description {font-size:.73rem!important;margin-top:8px!important;}
+    [data-testid="stHorizontalBlock"] {gap:.7rem!important;}
+    div[data-testid="stVerticalBlockBorderWrapper"] {background:#fff!important;border:1px solid var(--ui-edge)!important;border-radius:13px!important;box-shadow:0 2px 12px rgba(26,43,70,.025)!important;}
+    div[data-testid="stVerticalBlockBorderWrapper"] h4 {font-size:1.02rem!important;font-weight:800!important;letter-spacing:-.03em!important;margin:0!important;}
+    div[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] p {margin-bottom:0;}
+    [data-testid="stPlotlyChart"] {margin:0!important;}
+    div.st-key-redesign_refresh button {height:59px!important;min-height:59px!important;font-size:.91rem!important;border-radius:10px!important;white-space:nowrap;}
+    .redesign-decision {padding:14px 16px!important;min-height:105px!important;margin:3px 0 8px!important;border-radius:11px!important;border:1px solid #facbd2!important;}
+    .redesign-buy {background:linear-gradient(115deg,#ffe4e9,#fff2f4)!important;}
+    .redesign-wait {background:linear-gradient(115deg,#fff0f2,#fff8f8)!important;}
+    .redesign-decision-title {font-size:1.55rem!important;color:#c72243!important;}
+    .redesign-decision-info {color:#814a58!important;font-size:.79rem!important;}
+    .redesign-statusline {background:#fff6f7!important;border:1px solid #f9e3e8!important;border-radius:9px!important;}
+    .redesign-statusline b {color:#12865d!important;}
+    .redesign-info-tag {font-weight:650!important;color:#324762!important;}
+    .account-tiles {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:6px;}
+    .account-tile {border:1px solid #e6edf6;background:#f9fbff;border-radius:11px;padding:15px 14px;min-width:0;}
+    .account-tile-total {grid-column:span 2;background:#f1f6ff;border-color:#dce7fa;}
+    .account-tile-label {color:#738198;font-size:.84rem;font-weight:700;margin-bottom:8px;}
+    .account-tile-value {color:#172d55;font-size:clamp(1rem,1.25vw,1.25rem);font-weight:850;letter-spacing:-.04em;white-space:nowrap;}
+    .account-tile-sub {color:#4773b1;font-size:.79rem;margin-top:6px;}
+    .pair-note {color:#78869b;font-size:.76rem;line-height:1.4;margin-top:7px;}
+    @media (min-width:901px) and (max-width:1400px) {
+       .soxl-kpi-grid {grid-template-columns:repeat(6,minmax(0,1fr))!important;}
+       .soxl-kpi {height:108px!important;padding:10px 8px!important;}
+       .soxl-kpi-value {font-size:clamp(.88rem,1.35vw,1.2rem)!important;}
+       .soxl-kpi-label,.soxl-kpi-description {font-size:.69rem!important;}
+    }
+    @media(max-width:900px) {
+       .block-container {padding:.65rem .7rem 2rem!important;}
+       .soxl-kpi-grid {grid-template-columns:repeat(3,minmax(0,1fr))!important;}
+       .soxl-kpi {height:103px!important;}
+       .soxl-kpi-value {font-size:1.02rem!important;}
+    }
+    @media(max-width:540px) {.soxl-kpi-grid {grid-template-columns:repeat(2,minmax(0,1fr))!important;}}
     </style>
     """,
     unsafe_allow_html=True,
@@ -3849,7 +3900,7 @@ st.sidebar.markdown(f"**{latest_data_date}**")
 
 
 if _redesign_refresh_placeholder.button(
-    "↻ 데이터 새로고침",
+    "↻ 데이터 업데이트",
     use_container_width=True,
     type="primary",
     key="redesign_refresh",
@@ -5669,18 +5720,16 @@ def render_compact_trading_dashboard():
 
 
 # ============================================================
-# PIXEL-INSPIRED FINTECH LAYOUT: read-only overview, original trading actions intact.
+# PAIR LAYOUT: two boxes per row with aligned heights
 # ============================================================
 from html import escape as _html_escape
 
 _asset_nav = float(live_nav)
 _asset_cash = float(live_cash)
-_asset_invested = _asset_nav - _asset_cash
+_asset_invested = max(0.0, _asset_nav - _asset_cash)
 _asset_cash_pct = (_asset_cash / _asset_nav * 100.0) if _asset_nav > 0 else 0.0
 _asset_invest_pct = (_asset_invested / _asset_nav * 100.0) if _asset_nav > 0 else 0.0
 _asset_delta = _asset_nav - float(initial_capital) - float(net_external_cashflow)
-_asset_delta_pct = (_asset_delta / float(initial_capital)) * 100 if initial_capital else 0
-_dashboard_recent = pd.DataFrame()
 
 st.markdown("<div id='redesign-overview' class='redesign-section-anchor'></div>", unsafe_allow_html=True)
 _kpi_items = [
@@ -5699,129 +5748,135 @@ _kpi_html = '<section class="soxl-kpi-grid">' + ''.join(
 ) + '</section>'
 st.markdown(_kpi_html, unsafe_allow_html=True)
 
-_left, _right = st.columns([1.65, 1], gap="small")
-with _left:
-    with st.container(border=True):
-        _title, _filter = st.columns([2.3, 2.4], vertical_alignment="center")
-        _title.markdown("#### 📈 누적 자산곡선")
-        _period = _filter.segmented_control("기간", ["6개월", "1년", "3년", "전체"], default="전체", key="redesign_period", label_visibility="collapsed")
-        _eq = current_result.get("equity", pd.DataFrame()).copy()
-        if not _eq.empty:
-            _eq["Date"] = pd.to_datetime(_eq["Date"])
-            _eq = _eq.sort_values("Date")
-            _slice = {"6개월":pd.DateOffset(months=6), "1년":pd.DateOffset(years=1), "3년":pd.DateOffset(years=3)}
-            if _period in _slice:
-                _eq = _eq.loc[_eq["Date"] >= _eq["Date"].max() - _slice[_period]].copy()
-            # Compare a rebased SOXL buy-and-hold return with the strategy's re-based return.
-            _px = full_df[["Date","Close"]].copy()
-            _px["Date"] = pd.to_datetime(_px["Date"])
-            _px = _px.merge(_eq[["Date"]],on="Date",how="inner").sort_values("Date")
-            if not _px.empty:
-                _eq = _eq.merge(_px,on="Date",how="left")
-            _eq["Strategy_Return"] = 100 * (_eq["Equity"] / float(_eq["Equity"].iloc[0]) - 1)
-            _fig = go.Figure()
-            _fig.add_trace(go.Scatter(x=_eq["Date"],y=_eq["Strategy_Return"],name="퀀트 전략",mode="lines",line=dict(color="#2065F5",width=2.7),fill="tozeroy",fillcolor="rgba(32,101,245,.08)"))
-            if "Close" in _eq.columns and _eq["Close"].notna().all():
-                _eq["SOXL_Return"] = 100 * (_eq["Close"] / float(_eq["Close"].iloc[0]) - 1)
-                _fig.add_trace(go.Scatter(x=_eq["Date"],y=_eq["SOXL_Return"],name="SOXL 단순보유",mode="lines",line=dict(color="#97A4B8",width=1.7)))
-            _fig.update_layout(height=305,margin=dict(l=8,r=10,t=24,b=4),paper_bgcolor="white",plot_bgcolor="white",hovermode="x unified",legend=dict(orientation="h",y=1.18,x=0,font=dict(size=12,color="#314563")),xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
-            st.plotly_chart(_fig,use_container_width=True,config={"displayModeBar":False},key="redesign_main_eq")
-            st.markdown("<div class='redesign-smalltitle'>고점 대비 낙폭 (Drawdown)</div>",unsafe_allow_html=True)
-            # For the actual historical drawdown, preserve the HWM of the full backtest.
-            _global_curve = current_result.get("equity",pd.DataFrame()).copy()
-            _global_curve["Date"] = pd.to_datetime(_global_curve["Date"])
-            _global_curve["Drawdown"] = (_global_curve["Equity"]/_global_curve["Equity"].cummax()-1)*100
-            _d = _global_curve[_global_curve["Date"].isin(_eq["Date"])].copy()
-            _dd = go.Figure(go.Scatter(x=_d["Date"],y=_d["Drawdown"],name="Drawdown",mode="lines",line=dict(color="#F04461",width=1.6),fill="tozeroy",fillcolor="rgba(240,68,97,.13)"))
-            _dd.update_layout(height=140,margin=dict(l=8,r=10,t=6,b=4),paper_bgcolor="white",plot_bgcolor="white",showlegend=False,xaxis=dict(title=None,showgrid=False),yaxis=dict(title=None,ticksuffix="%",gridcolor="#EEF1F6"))
-            st.plotly_chart(_dd,use_container_width=True,config={"displayModeBar":False},key="redesign_drawdown")
-            st.caption("백테스트 기준 · 실전 계좌와 별개 · 선택 구간 시작을 0%로 환산")
-        else:
-            st.info("자산곡선 데이터가 없습니다.")
+_period_map = {"6개월": pd.DateOffset(months=6), "1년": pd.DateOffset(years=1), "3년": pd.DateOffset(years=3)}
 
-with _right:
-    with st.container(border=True):
-        st.markdown(f"#### 🎯 오늘의 주문 판단 <span class='redesign-date'>({action_session.date()})</span>",unsafe_allow_html=True)
+def _filter_by_period(df, date_col, selected_period):
+    out = df.copy()
+    out[date_col] = pd.to_datetime(out[date_col])
+    out = out.sort_values(date_col)
+    if selected_period in _period_map and not out.empty:
+        out = out.loc[out[date_col] >= out[date_col].max() - _period_map[selected_period]].copy()
+    return out
+
+_chart_period = None
+
+# ROW 1: SOXL price trend | Today's Action
+row1_left, row1_right = st.columns([1.65, 1], gap="medium")
+with row1_left:
+    with st.container(height=346, border=True):
+        _title, _filter = st.columns([2.4, 2.0], vertical_alignment="center")
+        _title.markdown("#### 📈 SOXL 가격 변동 추이")
+        _chart_period = _filter.segmented_control("기간", ["6개월", "1년", "3년", "전체"], default="전체", key="pair_period", label_visibility="collapsed")
+        _price = full_df[["Date", "Close"]].copy()
+        _price = _filter_by_period(_price, "Date", _chart_period)
+        if not _price.empty:
+            _price_fig = go.Figure()
+            _price_fig.add_trace(go.Scatter(
+                x=_price["Date"], y=_price["Close"], mode="lines", name="SOXL",
+                line=dict(color="#2563EB", width=2.5), fill="tozeroy", fillcolor="rgba(37,99,235,.08)",
+                hovertemplate="%{x|%Y-%m-%d}<br>SOXL $%{y:,.2f}<extra></extra>"
+            ))
+            _price_fig.update_layout(
+                height=235, margin=dict(l=12, r=12, t=12, b=12), paper_bgcolor="white", plot_bgcolor="white",
+                showlegend=False, hovermode="x unified", xaxis=dict(title=None, showgrid=False),
+                yaxis=dict(title=None, tickprefix="$", gridcolor="#EEF1F6")
+            )
+            st.plotly_chart(_price_fig, use_container_width=True, config={"displayModeBar": False}, key="pair_soxl_price")
+        else:
+            st.info("SOXL 가격 데이터가 없습니다.")
+with row1_right:
+    with st.container(height=346, border=True):
+        st.markdown(f"#### 🎯 Today's Action <span class='redesign-date'>({action_session.date()})</span>", unsafe_allow_html=True)
         _buy = next_action.startswith("BUY")
         _label = "매수 검토" if _buy else ("데이터 확인" if next_action.startswith("CHECK DATA") else "신규 매수 대기")
         _class = "redesign-buy" if _buy else "redesign-wait"
-        st.markdown(f"<div class='redesign-decision {_class}'><div class='redesign-decision-title'>{_label}</div><div class='redesign-decision-info'>{_html_escape(str(next_action))}</div></div>",unsafe_allow_html=True)
+        st.markdown(f"<div class='redesign-decision {_class}'><div class='redesign-decision-title'>{_label}</div><div class='redesign-decision-info'>{_html_escape(str(next_action))}</div></div>", unsafe_allow_html=True)
         _r1 = ("유예" if v11_pause_now else "정상") if strategy_mode.startswith("V11") else "V11 전용"
         _risk = "유예" if latest_risk_state else "정상"
-        st.markdown(f"<div class='redesign-statusline'><span>Risk B <b>{_risk}</b></span><span>R1 <b>{_r1}</b></span></div>",unsafe_allow_html=True)
-        st.markdown(f"<div class='redesign-info-tag'><b>예상 기본 매수</b> &nbsp; ₩{float(next_buy_amount):,.0f}</div>",unsafe_allow_html=True)
+        st.markdown(f"<div class='redesign-statusline'><span>Risk B <b>{_risk}</b></span><span>R1 <b>{_r1}</b></span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='redesign-info-tag'><b>예상 기본 매수</b> &nbsp; ₩{float(next_buy_amount):,.0f}</div>", unsafe_allow_html=True)
         if strategy_mode.startswith(("V10","V11")) and v10_crash_loc_price is not None:
-            st.caption(f"-9% 급락 추가매수 기준가: ${v10_crash_loc_price:,.2f} · 예상 추가금액 {v10_extra_buy_amount:,.0f}원")
-    with st.container(border=True):
+            st.markdown(f"<div class='pair-note'>-9% 급락 추가매수 기준가: ${v10_crash_loc_price:,.2f} · 예상 추가금액 {v10_extra_buy_amount:,.0f}원</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='pair-note'>현재 전략 기준 추가매수 보조 정보가 없습니다.</div>", unsafe_allow_html=True)
+        
+
+# ROW 2: cumulative equity | current account
+row2_left, row2_right = st.columns([1.65, 1], gap="medium")
+with row2_left:
+    with st.container(height=365, border=True):
+        st.markdown("#### 📊 누적 자산곡선")
+        _eq = current_result.get("equity", pd.DataFrame()).copy()
+        if not _eq.empty:
+            _eq = _filter_by_period(_eq, "Date", _chart_period or "전체")
+            _eq_fig = go.Figure()
+            _eq_fig.add_trace(go.Scatter(
+                x=_eq["Date"], y=_eq["Equity"], name="퀀트 전략", mode="lines",
+                line=dict(color="#2563EB", width=2.7), fill="tozeroy", fillcolor="rgba(37,99,235,.08)",
+                hovertemplate="%{x|%Y-%m-%d}<br>자산 %{y:,.0f}원<extra></extra>"
+            ))
+            _eq_fig.update_layout(
+                height=255, margin=dict(l=12, r=12, t=12, b=12), paper_bgcolor="white", plot_bgcolor="white",
+                showlegend=False, hovermode="x unified", xaxis=dict(title=None, showgrid=False),
+                yaxis=dict(title=None, tickformat=",.0f", ticksuffix="원", gridcolor="#EEF1F6")
+            )
+            st.plotly_chart(_eq_fig, use_container_width=True, config={"displayModeBar": False}, key="pair_equity_only")
+            st.caption("퀀트 전략 누적 자산 · 세로축은 금액 기준")
+        else:
+            st.info("자산곡선 데이터가 없습니다.")
+with row2_right:
+    with st.container(height=365, border=True):
         st.markdown("#### 💳 현재 계좌")
-        _ac = pd.DataFrame([
-            {"항목":"현금", "평가액":f"₩{_asset_cash:,.0f}", "비중":f"{_asset_cash_pct:.1f}%"},
-            {"항목":"투자 평가액", "평가액":f"₩{_asset_invested:,.0f}", "비중":f"{_asset_invest_pct:.1f}%"},
-            {"항목":"총자산", "평가액":f"₩{_asset_nav:,.0f}", "비중":"100%"},
-        ])
-        st.dataframe(_ac, hide_index=True, use_container_width=True, height=143)
-    with st.container(border=True):
-        st.markdown("<div id='redesign-slot-preview'></div>",unsafe_allow_html=True)
-        st.markdown("#### ▦ 보유 슬롯 미리보기")
-        _open = open_positions_display.copy() if isinstance(open_positions_display,pd.DataFrame) else pd.DataFrame()
+        _cards = [
+            ("현금", _asset_cash, _asset_cash_pct, ""),
+            ("투자 평가액", _asset_invested, _asset_invest_pct, ""),
+            ("실전 총자산", _asset_nav, 1.0, "account-tile-total"),
+        ]
+        _acc_html = '<section class="account-tiles">' + ''.join(
+            f'<div class="account-tile {klass}"><div class="account-tile-label">{title}</div>'
+            f'<div class="account-tile-value">₩{amount:,.0f}</div>'
+            f'<div class="account-tile-sub">{share:.1%}</div></div>'
+            for title,amount,share,klass in _cards
+        ) + '</section>'
+        st.markdown(_acc_html, unsafe_allow_html=True)
+        st.caption("확정 일봉 기준 · 실제 입력 수량과 입출금 반영")
+
+# ROW 3: drawdown | slot summary
+row3_left, row3_right = st.columns([1.65, 1], gap="medium")
+with row3_left:
+    with st.container(height=338, border=True):
+        st.markdown("#### 📉 고점 대비 낙폭")
+        _global_curve = current_result.get("equity", pd.DataFrame()).copy()
+        if not _global_curve.empty:
+            _global_curve["Date"] = pd.to_datetime(_global_curve["Date"])
+            _global_curve["Drawdown"] = (_global_curve["Equity"] / _global_curve["Equity"].cummax() - 1) * 100
+            _d = _filter_by_period(_global_curve[["Date", "Drawdown"]], "Date", _chart_period or "전체")
+            _dd = go.Figure(go.Scatter(
+                x=_d["Date"], y=_d["Drawdown"], name="Drawdown", mode="lines",
+                line=dict(color="#F04461", width=1.9), fill="tozeroy", fillcolor="rgba(240,68,97,.13)",
+                hovertemplate="%{x|%Y-%m-%d}<br>%{y:.2f}%<extra></extra>"
+            ))
+            _dd.update_layout(
+                height=227, margin=dict(l=12, r=12, t=12, b=12), paper_bgcolor="white", plot_bgcolor="white",
+                showlegend=False, hovermode="x unified", xaxis=dict(title=None, showgrid=False),
+                yaxis=dict(title=None, ticksuffix="%", gridcolor="#EEF1F6")
+            )
+            st.plotly_chart(_dd, use_container_width=True, config={"displayModeBar": False}, key="pair_drawdown")
+            st.caption("백테스트 기준 · 선택 구간의 실제 낙폭 경로")
+        else:
+            st.info("낙폭 데이터가 없습니다.")
+with row3_right:
+    with st.container(height=338, border=True):
+        st.markdown("#### ▦ 보유 슬롯 요약")
+        _open = open_positions_display.copy() if isinstance(open_positions_display, pd.DataFrame) else pd.DataFrame()
         if not _open.empty:
-            _columns = [c for c in ["슬롯","매수일","매수가","보유수량","현재 수익률","상태"] if c in _open.columns]
-            _preview = _open[_columns].head(7).copy()
+            _columns = [c for c in ["슬롯", "매수일", "매수가", "보유수량", "현재 수익률", "상태"] if c in _open.columns]
+            _preview = _open[_columns].head(6).copy()
             if "상태" in _preview.columns:
-                _preview["상태"] = _preview["상태"].astype(str).str.replace("LOC(목표수익 매도) 대기","보유",regex=False).str.replace("MOC(종가 매도) 오늘 예정","오늘 매도",regex=False)
-            st.dataframe(_preview,hide_index=True,use_container_width=True,height=min(278,40*(len(_preview)+1)+6))
+                _preview["상태"] = _preview["상태"].astype(str).str.replace("LOC(목표수익 매도) 대기", "보유", regex=False).str.replace("MOC(종가 매도) 오늘 예정", "오늘 매도", regex=False)
+            st.dataframe(_preview, hide_index=True, use_container_width=True, height=min(255, 36 * (len(_preview) + 1) + 8))
         else:
             st.info("현재 보유 슬롯이 없습니다.")
-
-st.markdown("<div id='redesign-order-management'></div>", unsafe_allow_html=True)
-_bottom_left, _bottom_right = st.columns([1.65, 1], gap="medium")
-with _bottom_left:
-    with st.container(border=True):
-        st.markdown("#### 📋 최근 청산 거래")
-        st.caption("보유 슬롯 미리보기와 중복되지 않도록 최근 종료된 거래만 표시")
-        _recent = live_trades.copy() if isinstance(live_trades, pd.DataFrame) else pd.DataFrame()
-        if not _recent.empty and {"Exit_Date", "Entry_Date"}.issubset(_recent.columns):
-            _recent = _recent.sort_values("Exit_Date", ascending=False).head(8).copy()
-            _recent_cols = [c for c in ["Entry_Date", "Exit_Date", "Entry_Price", "Exit_Price", "Return", "Exit_Type"] if c in _recent.columns]
-            _recent = _recent[_recent_cols].copy()
-            _recent = _recent.rename(columns={
-                "Entry_Date":"매수일", "Exit_Date":"매도일", "Entry_Price":"매수가($)",
-                "Exit_Price":"매도가($)", "Return":"수익률", "Exit_Type":"매도사유"})
-            for _date_col in ["매수일", "매도일"]:
-                if _date_col in _recent.columns:
-                    _recent[_date_col] = pd.to_datetime(_recent[_date_col], errors="coerce").dt.strftime("%Y-%m-%d")
-            if "수익률" in _recent.columns:
-                _recent["수익률"] = pd.to_numeric(_recent["수익률"], errors="coerce").map(lambda v:f"{v:+.2%}" if pd.notna(v) else "-")
-            st.dataframe(_recent, hide_index=True, use_container_width=True,
-                         height=min(294, 35*(len(_recent)+1)+8))
-        else:
-            st.info("표시할 최근 청산 거래가 없습니다.")
-with _bottom_right:
-    with st.container(border=True):
-        st.markdown("<div id='redesign-performance'></div>",unsafe_allow_html=True)
-        st.markdown("#### 📈 전략 성과 요약 (백테스트)")
-        _p1,_p2 = st.columns(2)
-        _curve = current_result.get("equity",pd.DataFrame())
-        _total_ret = float(_curve["Equity"].iloc[-1]/_curve["Equity"].iloc[0]-1) if len(_curve)>1 else 0
-        _p1.metric("누적 수익률",f"{_total_ret:+.2%}")
-        _p2.metric("CAGR",f"{stats['cagr']:.2%}")
-        _p3,_p4 = st.columns(2)
-        _p3.metric("MDD",f"{stats['mdd']:.2%}")
-        _w = stats.get("win_rate",float("nan"))
-        _p4.metric("거래 승률", f"{float(_w):.2%}" if pd.notna(_w) else "-")
-        _comparisons = [("선택 전략",current_result),("V11",v11_result),("V10",v10_result),("V9",v9_result)]
-        _bar_data=[]
-        for _nm,_res in _comparisons:
-            _eq2=_res.get("equity",pd.DataFrame())
-            if len(_eq2)>1:
-                _bar_data.append((_nm,float(_eq2["Equity"].iloc[-1]/_eq2["Equity"].iloc[0]-1)*100))
-        if _bar_data:
-            _names=[v[0] for v in _bar_data]
-            _vals=[v[1] for v in _bar_data]
-            _bars=go.Figure(go.Bar(y=_names,x=_vals,orientation="h",marker_color=["#2563EB","#A5B4C8","#A5B4C8","#A5B4C8"],text=[f"{v:+.1f}%" for v in _vals],textposition="outside",cliponaxis=False))
-            _bars.update_layout(height=150,margin=dict(l=4,r=46,t=5,b=8),paper_bgcolor="white",plot_bgcolor="white",showlegend=False,xaxis=dict(visible=False),yaxis=dict(autorange="reversed",title=None))
-            st.plotly_chart(_bars,use_container_width=True,config={"displayModeBar":False},key="redesign_compare_bars")
-        st.caption("동일 기간 전략별 백테스트 비교 · 원금 대비 단순 누적수익률")
 
 st.markdown("<div id='redesign-manage-details'></div>", unsafe_allow_html=True)
 with st.expander("✏️ 실제 체결가 · 보유수량 · 슬롯 제외/복원 · 주문 상세 관리", expanded=False):
