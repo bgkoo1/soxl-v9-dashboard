@@ -790,6 +790,45 @@ div.st-key-order_table_tabs [data-baseweb="tab"][aria-selected="true"]{font-weig
 div.st-key-order_table_tabs [data-baseweb="tab-highlight"],
 div.st-key-order_table_tabs [data-baseweb="tab-border"]{background:transparent!important;border-color:transparent!important;}
 /* Let the cards use natural heights without any inner fixed-height scroll surface. */
+
+/* V10: 150% text rhythm, roomier risk/performance content, action summary cards */
+.ref-panel-head,.ref-panel-head span,.ref-panel-head small,
+.ref-kpi-label,.ref-kpi-value,.ref-kpi-foot,.ref-chart-subtitle,
+.ref-account-name,.ref-account-value,.ref-account-sub,
+.ref-perf-grid small,.ref-perf-grid strong,.ref-bar-row,.ref-bar-row b,
+.ref-data-table th,.ref-data-table td,.action-essential,
+.action-essential-state,.action-essential-state span,
+.action-essential-item small,.action-essential-item strong,
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"],
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] p{
+ line-height:1.5!important;
+}
+.ref-chart-subtitle{margin:8px 0 4px!important;}
+.ref-perf-grid{margin:10px 0 22px!important;row-gap:16px!important;}
+.ref-perf-grid > div{display:flex;flex-direction:column;gap:6px!important;}
+.ref-bar-list{gap:17px!important;margin:9px 0 12px!important;}
+.ref-bar-row{grid-template-columns:76px minmax(0,1fr) 65px!important;gap:10px!important;
+ min-height:22px!important;font-size:.74rem!important;}
+.ref-bar-row b{font-size:.71rem!important;}
+.ref-bar-track{height:10px!important;}
+.action-essential{padding:9px 0 11px!important;}
+.action-essential-state{min-height:39px!important;color:#ae2346!important;}
+.action-essential-state strong{font-size:1.55rem!important;color:#c72d4d!important;}
+.action-essential.is-buy .action-essential-state strong,
+.action-essential.is-wait .action-essential-state strong,
+.action-essential.is-check .action-essential-state strong{color:#c72d4d!important;}
+.action-essential-state span{color:#89415b!important;font-size:.91rem!important;}
+.action-essential-numbers{grid-template-columns:1fr 1.2fr!important;gap:10px!important;margin-top:12px!important;}
+.action-essential-item{border:1px solid #f1cbd3!important;background:#fff7f8!important;
+ border-radius:12px!important;padding:11px 12px!important;min-height:89px!important;
+ display:flex;flex-direction:column;justify-content:center;}
+.action-essential-item small{color:#a35a70!important;font-size:.80rem!important;margin-bottom:4px!important;}
+.action-essential-item strong{font-size:clamp(1.18rem,1.6vw,1.65rem)!important;color:#99273d!important;white-space:normal!important;overflow-wrap:anywhere;}
+@media(max-width:1200px){
+ .action-essential-numbers{grid-template-columns:1fr 1fr!important;}
+ .action-essential-item{padding:8px!important;min-height:80px!important;}
+ .action-essential-item strong{font-size:1.13rem!important;}
+}
     </style>
     """,
     unsafe_allow_html=True,
@@ -5946,7 +5985,7 @@ with _main_left:
             _ddfig=go.Figure(go.Scatter(x=_dd["Date"],y=_dd["Drawdown"],name="Drawdown",mode="lines",
                 line=dict(color="#ed4764",width=1.8),fill="tozeroy",fillcolor="rgba(237,71,100,.12)",
                 hovertemplate="%{x|%Y-%m-%d}<br>%{y:.2f}%<extra></extra>"))
-            _ddfig.update_layout(height=119,margin=dict(l=4,r=4,t=4,b=2),showlegend=False,
+            _ddfig.update_layout(height=179,margin=dict(l=4,r=4,t=5,b=3),showlegend=False,
                paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",xaxis=dict(showgrid=False,title=None,tickfont=dict(size=9,color="#8290a5")),
                yaxis=dict(title=None,ticksuffix="%",gridcolor="#edf2fa",tickfont=dict(size=10,color="#8290a5")))
             st.plotly_chart(_ddfig,use_container_width=True,config={"displayModeBar":False},key="ref_main_drawdown")
@@ -5979,7 +6018,7 @@ with _main_right:
         _cash_display = f"₩{_order_cash:,.0f}"
         st.markdown(
             f'<section class="action-essential {_state_class}">'
-            f'<div class="action-essential-state">{_ui_icon("target", "#16a66e" if _buy else "#8090a6", 22)}'
+            f'<div class="action-essential-state">{_ui_icon("target", "#cc3655" if _buy else "#8090a6", 22)}'
             f'<strong>{_html_escape(_state)}</strong><span>{_html_escape(_state_ko)}</span></div>'
             f'<div class="action-essential-numbers">'
             f'<div class="action-essential-item"><small>예상 주문수량</small><strong>{_html_escape(_qty_display)}</strong></div>'
