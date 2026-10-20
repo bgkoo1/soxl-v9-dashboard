@@ -693,6 +693,39 @@ div.st-key-redesign_refresh button {height:64px!important;min-height:64px!import
 @media(max-width:1250px) {.ref-kpi-value{font-size:.96rem;}.ref-kpi{padding:10px 7px;}.ref-kpi-label{font-size:.65rem;}.ref-account-value{font-size:.78rem;}.ref-action-bottom{font-size:.62rem;}}
 @media(max-width:900px) {.ref-kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr));}.ref-kpi{height:94px;}[data-testid="stSidebar"] {width:210px!important;min-width:210px!important;}}
 
+
+/* V6 — stable summary layout and legible actionable order card */
+.ref-kpi-grid{gap:10px!important;margin:11px 0 12px!important;}
+.ref-kpi{height:112px!important;padding:14px 13px!important;border-radius:12px!important;}
+.ref-kpi-label{font-size:.79rem!important;gap:8px!important;}
+.ref-kpi-value{font-size:clamp(1.04rem,1.38vw,1.40rem)!important;line-height:1.12!important;margin:10px 0 7px!important;}
+.ref-kpi-foot{font-size:.73rem!important;}
+.ref-panel-head{font-size:1.03rem!important;min-height:27px!important;margin-bottom:6px!important;}
+.ref-chart-subtitle{font-size:.85rem!important;line-height:1.4!important;margin:10px 0 5px!important;}
+.ref-action-card{border-radius:12px;border:1px solid #e5eaf2;padding:10px 14px 11px;background:#fafbfd;}
+.ref-action-buy{border-left:5px solid #159c68;background:linear-gradient(105deg,#f4fff9,#fff);}
+.ref-action-wait{border-left:5px solid #ca4057;background:linear-gradient(105deg,#fff5f7,#fff);}
+.ref-action-check{border-left:5px solid #db7d28;background:#fff9ef;}
+.ref-action-state{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#203657;line-height:1.1;}
+.ref-action-state strong{font-size:1.25rem;font-weight:900;}
+.ref-action-state-note{font-size:.73rem;color:#5a6d88;font-weight:600;}
+.ref-action-dot{width:11px;height:11px;border-radius:50%;background:#d4485d;display:inline-block;flex-shrink:0;}
+.ref-action-buy .ref-action-dot{background:#16a66e;}
+.ref-action-check .ref-action-dot{background:#d98b2a;}
+.ref-action-amount-label{font-size:.71rem;color:#71809a;margin-top:7px;font-weight:700;}
+.ref-action-amount{font-size:clamp(1.45rem,1.9vw,1.95rem);font-weight:900;color:#183156;line-height:1.13;letter-spacing:-.035em;margin:2px 0 5px;}
+.ref-action-qty{display:inline-block;background:#e9f0fc;border-radius:7px;padding:4px 8px;font-size:.9rem;color:#163d77;font-weight:800;}
+.ref-action-quotes{font-size:.74rem;color:#516783;margin-top:6px;}
+.ref-action-meta{display:flex;justify-content:space-between;align-items:center;gap:6px;color:#647590;font-size:.69rem;margin:6px 0 1px;flex-wrap:wrap;}
+.ref-action-meta b{color:#148a61;}
+.ref-account-grid{gap:8px!important;margin-top:7px!important;}
+.ref-account-item{padding:11px 10px!important;}
+.ref-account-name{font-size:.75rem!important;}
+.ref-account-value{font-size:clamp(.84rem,1.04vw,1.10rem)!important;margin:9px 0 5px!important;}
+.ref-account-sub{font-size:.72rem!important;}
+.ref-perf-grid strong{font-size:clamp(.98rem,1.2vw,1.25rem)!important;}
+@media(max-width:1250px){.ref-action-amount{font-size:1.55rem;}.ref-action-state-note{font-size:.68rem;}}
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -5818,7 +5851,7 @@ st.markdown('<div class="ref-kpi-grid">'+''.join(
 
 _main_left,_main_right=st.columns([1.65,1],gap="small")
 with _main_left:
-    with st.container(height=455,border=True):
+    with st.container(height=535,border=True):
         _chart_title_col,_period_col=st.columns([1.6,1.35],vertical_alignment="center",gap="small")
         with _chart_title_col:
             _panel_title("chart","누적 자산곡선")
@@ -5838,7 +5871,7 @@ with _main_left:
             _fig.add_trace(go.Scatter(x=_eq["Date"],y=_eq["Equity"],name="퀀트 전략",
                line=dict(color="#2169ee",width=2.6),mode="lines",fill="tozeroy",fillcolor="rgba(33,105,238,.06)",
                hovertemplate="%{x|%Y-%m-%d}<br>전략 NAV ₩%{y:,.0f}<extra></extra>"))
-            _fig.update_layout(height=222,margin=dict(l=4,r=4,t=8,b=0),showlegend=False,
+            _fig.update_layout(height=253,margin=dict(l=4,r=4,t=8,b=4),showlegend=False,
                paper_bgcolor="#ffffff",plot_bgcolor="#ffffff",hovermode="x unified",
                xaxis=dict(title=None,showgrid=False,tickfont=dict(size=10,color="#8290a5")),
                yaxis=dict(title=None,tickformat="~s",tickprefix="₩",gridcolor="#edf2fa",tickfont=dict(size=10,color="#8290a5")),
@@ -5849,7 +5882,7 @@ with _main_left:
             _ddfig=go.Figure(go.Scatter(x=_dd["Date"],y=_dd["Drawdown"],name="Drawdown",mode="lines",
                 line=dict(color="#ed4764",width=1.8),fill="tozeroy",fillcolor="rgba(237,71,100,.12)",
                 hovertemplate="%{x|%Y-%m-%d}<br>%{y:.2f}%<extra></extra>"))
-            _ddfig.update_layout(height=107,margin=dict(l=4,r=4,t=0,b=0),showlegend=False,
+            _ddfig.update_layout(height=135,margin=dict(l=4,r=4,t=7,b=4),showlegend=False,
                paper_bgcolor="#ffffff",plot_bgcolor="#ffffff",xaxis=dict(showgrid=False,title=None,tickfont=dict(size=9,color="#8290a5")),
                yaxis=dict(title=None,ticksuffix="%",gridcolor="#edf2fa",tickfont=dict(size=10,color="#8290a5")))
             st.plotly_chart(_ddfig,use_container_width=True,config={"displayModeBar":False},key="ref_main_drawdown")
@@ -5858,16 +5891,54 @@ with _main_left:
             st.info("선택 전략의 누적자산 자료가 없습니다.")
 
 with _main_right:
-    with st.container(height=145,border=True):
-        _panel_title("target","오늘의 주문 판단",str(action_session.date()))
+    with st.container(height=205,border=True):
+        _panel_title("target","TODAY'S ACTION · 오늘 주문",str(action_session.date()))
+        # The trading signal is based on confirmed closes. Intraday quotes are
+        # used only to estimate order quantities, never to change BUY/WAIT.
         _buy=next_action.startswith("BUY")
-        _label="매수 검토" if _buy else ("데이터 확인" if next_action.startswith("CHECK DATA") else "신규 매수 대기")
-        _r1="매수 유예" if v11_pause_now and strategy_mode.startswith("V11") else "정상"
-        _risk="매수 유예" if latest_risk_state else "정상"
-        st.markdown(f'<div class="ref-action-banner"><div class="ref-action-main">{_html_escape(_label)}</div>'
-                    f'<div class="ref-action-detail">{_html_escape(str(next_action))}</div></div>',unsafe_allow_html=True)
-        st.markdown(f'<div class="ref-action-bottom"><span>Risk B <b>{_risk}</b> · R1 <b>{_r1}</b></span>'
-                    f'<span>예상 기본매수 <strong>₩{float(next_buy_amount):,.0f}</strong></span></div>',unsafe_allow_html=True)
+        _quote=get_soxl_realtime_snapshot(live_close)
+        _fx_info=get_usdkrw_realtime_snapshot()
+        _price=float(_quote.get("price") or 0.0)
+        _fx_raw=_fx_info.get("rate")
+        _fx=float(_fx_raw) if _fx_raw is not None and float(_fx_raw)>0 else None
+        _order_cash=float(v10_base_buy_amount if strategy_mode.startswith(("V10","V11")) else next_buy_amount) if _buy else 0.0
+        _qty=int(_order_cash/(_price*_fx)) if _buy and _price>0 and _fx else None
+        _has_live_quote=bool(_quote.get("is_live"))
+        _live_stamp=_quote.get("updated_at")
+        _stamp_text=pd.Timestamp(_live_stamp).strftime("%m/%d %H:%M ET") if _live_stamp is not None else "조회 불가"
+        _market_price=(f"SOXL ${_price:,.2f}" if _price>0 else "SOXL 시세 확인 필요")
+        _rate_text=(f"환율 {_fx:,.2f}원/$" if _fx else "환율 조회 불가")
+        _qty_text=(f"예상 {_qty:,}주" if _qty is not None else ("가격·환율 확인 필요" if _buy else "주문 없음"))
+        _state=("BUY" if _buy else ("CHECK DATA" if next_action.startswith("CHECK DATA") else
+                ("SKIP" if next_action.startswith("SKIP") else "WAIT")))
+        _status_text=("기본 MOC 1슬롯 · 급락 LOC 대기" if _buy and strategy_mode.startswith(("V10","V11"))
+                      else ("기본 신규매수" if _buy else _html_escape(str(next_action))))
+        _risk="유예" if latest_risk_state else "정상"
+        _r1="유예" if v11_pause_now and strategy_mode.startswith("V11") else "정상"
+        _tone="buy" if _buy else ("check" if _state=="CHECK DATA" else "wait")
+        st.markdown(
+            f'<section class="ref-action-card ref-action-{_tone}">'
+            f'<div class="ref-action-state"><span class="ref-action-dot"></span><strong>{_state}</strong>'
+            f'<span class="ref-action-state-note">{_status_text}</span></div>'
+            f'<div class="ref-action-amount-label">기본 주문 예정금액</div>'
+            f'<div class="ref-action-amount">₩{_order_cash:,.0f}</div>'
+            f'<div class="ref-action-qty">{_qty_text}</div>'
+            f'<div class="ref-action-quotes">{_market_price} · {_rate_text}</div>'
+            f'</section>',
+            unsafe_allow_html=True,
+        )
+        _quote_label=("장중 참고시세" if _has_live_quote else "마지막 확정종가(실시간 아님)")
+        st.markdown(
+            f'<div class="ref-action-meta"><span>Risk B <b>{_risk}</b> &nbsp; R1 <b>{_r1}</b></span>'
+            f'<span>{_quote_label} · {_stamp_text}</span></div>',
+            unsafe_allow_html=True,
+        )
+        if _buy and strategy_mode.startswith(("V10","V11")) and v10_crash_loc_price is not None:
+            st.caption(f"추가 LOC 기준 ${v10_crash_loc_price:,.2f} · 추가매수 {v10_extra_buy_amount:,.0f}원 (조건·잔여 슬롯 충족 시)")
+        elif _buy:
+            st.caption("수량은 현재 참고시세 추정치 · 실제 주문 수량은 체결가에 따라 달라집니다.")
+        else:
+            st.caption("확정 일봉 기준 매수 판단 · 기존 보유 슬롯의 매도 주문은 별도 확인")
     with st.container(height=145,border=True):
         _panel_title("wallet","현재 계좌","확정 자료")
         _acct=[("현금",_asset_cash,_asset_cash_pct),("투자 평가액",_asset_invested,_asset_invest_pct),("총자산",_asset_nav,1.0)]
@@ -5884,7 +5955,7 @@ with _main_right:
             _pv=_open[_cols].head(4).copy()
             if "상태" in _pv:
                 _pv["상태"]=_pv["상태"].astype(str).str.replace("LOC(목표수익 매도) 대기","보유",regex=False).str.replace("MOC(종가 매도) 오늘 예정","오늘 매도",regex=False)
-            st.dataframe(_pv,use_container_width=True,hide_index=True,height=105)
+            st.dataframe(_pv,use_container_width=True,hide_index=True,height=125)
         else:
             st.caption("현재 보유 중인 슬롯이 없습니다.")
 
