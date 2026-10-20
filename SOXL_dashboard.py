@@ -764,6 +764,32 @@ div.st-key-redesign_refresh button {height:64px!important;min-height:64px!import
 .ref-account-item{padding:6px 7px!important;}
 .ref-account-value{margin:5px 0 3px!important;}
 
+
+/* V9 clean chart surfaces, aligned main panels, essential-only order card */
+[data-testid="stPlotlyChart"]{background:transparent!important;}
+[data-testid="stPlotlyChart"]>div{background:transparent!important;}
+.ref-chart-subtitle{margin:5px 0 2px!important;font-size:.82rem!important;}
+.ref-action-card{display:none!important;} /* superseded by essential-only card */
+.action-essential{background:transparent;border:none;padding:5px 1px 2px;}
+.action-essential-state{display:flex;align-items:center;gap:9px;min-height:34px;color:#203c60;}
+.action-essential-state strong{font-size:1.35rem;letter-spacing:-.02em;line-height:1.2;}
+.action-essential-state span{font-size:.83rem;color:#7787a0;font-weight:650;}
+.action-essential.is-buy .action-essential-state strong{color:#159b68;}
+.action-essential.is-wait .action-essential-state strong{color:#667891;}
+.action-essential.is-check .action-essential-state strong{color:#c07526;}
+.action-essential-numbers{display:grid;grid-template-columns:1fr 1.25fr;gap:20px;align-items:end;margin-top:12px;}
+.action-essential-item{min-width:0;}
+.action-essential-item small{display:block;color:#7888a2;font-size:.77rem;font-weight:650;margin-bottom:5px;}
+.action-essential-item strong{font-size:clamp(1.17rem,1.55vw,1.75rem);line-height:1.2;letter-spacing:-.04em;color:#172f57;font-weight:850;white-space:nowrap;}
+div.st-key-order_table_tabs [data-baseweb="tab-list"]{background:transparent!important;border:0!important;padding:0!important;box-shadow:none!important;}
+div.st-key-order_table_tabs [data-baseweb="tab"]{background:transparent!important;color:#6d7f99!important;
+ font-weight:500!important;box-shadow:none!important;border:0!important;border-radius:0!important;
+ min-height:34px!important;padding:6px 13px!important;}
+div.st-key-order_table_tabs [data-baseweb="tab"][aria-selected="true"]{font-weight:850!important;color:#1a355e!important;
+ background:transparent!important;box-shadow:none!important;border:0!important;}
+div.st-key-order_table_tabs [data-baseweb="tab-highlight"],
+div.st-key-order_table_tabs [data-baseweb="tab-border"]{background:transparent!important;border-color:transparent!important;}
+/* Let the cards use natural heights without any inner fixed-height scroll surface. */
     </style>
     """,
     unsafe_allow_html=True,
@@ -5909,8 +5935,8 @@ with _main_left:
             _fig.add_trace(go.Scatter(x=_eq["Date"],y=_eq["Equity"],name="퀀트 전략",
                line=dict(color="#2169ee",width=2.6),mode="lines",fill="tozeroy",fillcolor="rgba(33,105,238,.06)",
                hovertemplate="%{x|%Y-%m-%d}<br>전략 NAV ₩%{y:,.0f}<extra></extra>"))
-            _fig.update_layout(height=253,margin=dict(l=4,r=4,t=8,b=4),showlegend=False,
-               paper_bgcolor="#ffffff",plot_bgcolor="#ffffff",hovermode="x unified",
+            _fig.update_layout(height=239,margin=dict(l=4,r=4,t=6,b=2),showlegend=False,
+               paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",hovermode="x unified",
                xaxis=dict(title=None,showgrid=False,tickfont=dict(size=10,color="#8290a5")),
                yaxis=dict(title=None,tickformat="~s",tickprefix="₩",gridcolor="#edf2fa",tickfont=dict(size=10,color="#8290a5")),
                font=dict(family="Arial, sans-serif"))
@@ -5920,8 +5946,8 @@ with _main_left:
             _ddfig=go.Figure(go.Scatter(x=_dd["Date"],y=_dd["Drawdown"],name="Drawdown",mode="lines",
                 line=dict(color="#ed4764",width=1.8),fill="tozeroy",fillcolor="rgba(237,71,100,.12)",
                 hovertemplate="%{x|%Y-%m-%d}<br>%{y:.2f}%<extra></extra>"))
-            _ddfig.update_layout(height=135,margin=dict(l=4,r=4,t=7,b=4),showlegend=False,
-               paper_bgcolor="#ffffff",plot_bgcolor="#ffffff",xaxis=dict(showgrid=False,title=None,tickfont=dict(size=9,color="#8290a5")),
+            _ddfig.update_layout(height=119,margin=dict(l=4,r=4,t=4,b=2),showlegend=False,
+               paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",xaxis=dict(showgrid=False,title=None,tickfont=dict(size=9,color="#8290a5")),
                yaxis=dict(title=None,ticksuffix="%",gridcolor="#edf2fa",tickfont=dict(size=10,color="#8290a5")))
             st.plotly_chart(_ddfig,use_container_width=True,config={"displayModeBar":False},key="ref_main_drawdown")
             st.caption("백테스트 누적자산(원) · 실전 계좌 NAV와 별개 · SOXL 단순보유 비교 없음")
@@ -5931,52 +5957,38 @@ with _main_left:
 with _main_right:
     with st.container(border=True):
         _panel_title("target","TODAY'S ACTION · 오늘 주문",str(action_session.date()))
-        # The trading signal is based on confirmed closes. Intraday quotes are
-        # used only to estimate order quantities, never to change BUY/WAIT.
-        _buy=next_action.startswith("BUY")
-        _quote=get_soxl_realtime_snapshot(live_close)
-        _fx_info=get_usdkrw_realtime_snapshot()
-        _price=float(_quote.get("price") or 0.0)
-        _fx_raw=_fx_info.get("rate")
-        _fx=float(_fx_raw) if _fx_raw is not None and float(_fx_raw)>0 else None
-        _order_cash=float(v10_base_buy_amount if strategy_mode.startswith(("V10","V11")) else next_buy_amount) if _buy else 0.0
-        _qty=int(_order_cash/(_price*_fx)) if _buy and _price>0 and _fx else None
-        _has_live_quote=bool(_quote.get("is_live"))
-        _live_stamp=_quote.get("updated_at")
-        _stamp_text=pd.Timestamp(_live_stamp).strftime("%m/%d %H:%M ET") if _live_stamp is not None else "조회 불가"
-        _market_price=(f"SOXL ${_price:,.2f}" if _price>0 else "SOXL 시세 확인 필요")
-        _rate_text=(f"환율 {_fx:,.2f}원/$" if _fx else "환율 조회 불가")
-        _qty_text=(f"예상 {_qty:,}주" if _qty is not None else ("가격·환율 확인 필요" if _buy else "주문 없음"))
-        _state=("BUY" if _buy else ("CHECK DATA" if next_action.startswith("CHECK DATA") else
-                ("SKIP" if next_action.startswith("SKIP") else "WAIT")))
-        _status_text=("기본 MOC 1슬롯 · 급락 LOC 대기" if _buy and strategy_mode.startswith(("V10","V11"))
-                      else ("기본 신규매수" if _buy else _html_escape(str(next_action))))
-        _risk="유예" if latest_risk_state else "정상"
-        _r1="유예" if v11_pause_now and strategy_mode.startswith("V11") else "정상"
-        _tone="buy" if _buy else ("check" if _state=="CHECK DATA" else "wait")
+        # Confirmed-close trading signal; current quotes are only used for
+        # estimated integer share quantity (not to generate the BUY signal).
+        _buy = next_action.startswith("BUY")
+        _data_check = next_action.startswith("CHECK DATA")
+        _quote = get_soxl_realtime_snapshot(live_close) if _buy else {}
+        _fx_info = get_usdkrw_realtime_snapshot() if _buy else {}
+        _price = float(_quote.get("price") or 0.0)
+        _fx_raw = _fx_info.get("rate")
+        _fx = float(_fx_raw) if _fx_raw is not None and float(_fx_raw) > 0 else None
+        _order_cash = float(
+            v10_base_buy_amount if strategy_mode.startswith(("V10", "V11")) else next_buy_amount
+        ) if _buy else 0.0
+        _qty = int(_order_cash / (_price * _fx)) if _buy and _price > 0 and _fx else None
+        _state = "BUY" if _buy else ("확인 필요" if _data_check else "WAIT")
+        _state_ko = "기본 매수" if _buy else ("데이터 확인" if _data_check else "신규 매수 대기")
+        _state_class = "is-buy" if _buy else ("is-check" if _data_check else "is-wait")
+        _qty_display = f"{_qty:,}주" if _qty is not None else (
+            "가격·환율 확인" if _buy else "0주"
+        )
+        _cash_display = f"₩{_order_cash:,.0f}"
         st.markdown(
-            f'<section class="ref-action-card ref-action-{_tone}">'
-            f'<div class="ref-action-state"><span class="ref-action-dot"></span><strong>{_state}</strong>'
-            f'<span class="ref-action-state-note">{_status_text}</span></div>'
-            f'<div class="ref-action-amount-label">기본 주문 예정금액</div>'
-            f'<div class="ref-action-amount">₩{_order_cash:,.0f}</div>'
-            f'<div class="ref-action-qty">{_qty_text}</div>'
-            f'<div class="ref-action-quotes">{_market_price} · {_rate_text}</div>'
-            f'</section>',
+            f'<section class="action-essential {_state_class}">'
+            f'<div class="action-essential-state">{_ui_icon("target", "#16a66e" if _buy else "#8090a6", 22)}'
+            f'<strong>{_html_escape(_state)}</strong><span>{_html_escape(_state_ko)}</span></div>'
+            f'<div class="action-essential-numbers">'
+            f'<div class="action-essential-item"><small>예상 주문수량</small><strong>{_html_escape(_qty_display)}</strong></div>'
+            f'<div class="action-essential-item"><small>총 주문금액</small><strong>{_html_escape(_cash_display)}</strong></div>'
+            f'</div></section>',
             unsafe_allow_html=True,
         )
-        _quote_label=("장중 참고시세" if _has_live_quote else "마지막 확정종가(실시간 아님)")
-        st.markdown(
-            f'<div class="ref-action-meta"><span>Risk B <b>{_risk}</b> &nbsp; R1 <b>{_r1}</b></span>'
-            f'<span>{_quote_label} · {_stamp_text}</span></div>',
-            unsafe_allow_html=True,
-        )
-        if _buy and strategy_mode.startswith(("V10","V11")) and v10_crash_loc_price is not None:
-            st.caption(f"추가 LOC 기준 ${v10_crash_loc_price:,.2f} · 추가매수 {v10_extra_buy_amount:,.0f}원 (조건·잔여 슬롯 충족 시)")
-        elif _buy:
-            st.caption("수량은 현재 참고시세 추정치 · 실제 주문 수량은 체결가에 따라 달라집니다.")
-        else:
-            st.caption("확정 일봉 기준 매수 판단 · 기존 보유 슬롯의 매도 주문은 별도 확인")
+        if _buy:
+            st.caption("현재 시세·환율 기준 예상 주수 · 조건부 급락 추가 LOC 주문은 금액에서 제외")
     with st.container(border=True):
         _panel_title("wallet","현재 계좌","확정 자료")
         _acct=[("현금",_asset_cash,_asset_cash_pct),("투자 평가액",_asset_invested,_asset_invest_pct),("총자산",_asset_nav,1.0)]
@@ -6012,31 +6024,32 @@ _bottom_left,_bottom_right=st.columns([1.65,1],gap="small")
 with _bottom_left:
     with st.container(border=True):
         _panel_title("file","상세 주문 · 슬롯 편집 · 실제 체결가 관리")
-        _order_tabs=st.tabs(["전체","보유 슬롯","최근 종료"])
-        with _order_tabs[0]:
-            _preview=open_positions_display.copy() if isinstance(open_positions_display,pd.DataFrame) else pd.DataFrame()
-            if not _preview.empty:
-                _cols=[c for c in ["슬롯","매수유형","매수일","전략 매수가","매수가","보유수량","현재 수익률","상태"] if c in _preview.columns]
-                _bottom_preview=_preview[_cols].head(8).copy()
-                _th="".join(f"<th>{_html_escape(str(c))}</th>" for c in _cols)
-                _rows="".join(
-                    "<tr>"+"".join(f"<td>{_html_escape(str(v))}</td>" for v in row)+"</tr>"
-                    for row in _bottom_preview.itertuples(index=False,name=None)
-                )
-                st.markdown(
-                    f'<div class="ref-table-wrap"><table class="ref-data-table"><thead><tr>{_th}</tr></thead>'
-                    f'<tbody>{_rows}</tbody></table></div>',
-                    unsafe_allow_html=True,
-                )
-            else: st.caption("표시할 실전 슬롯이 없습니다.")
-        with _order_tabs[1]:
-            st.caption(f"현재 {live_open_count}개 슬롯 보유 · 실제 체결가 변경은 아래 상세 관리에서 진행")
-        with _order_tabs[2]:
-            _closed=live_trades.copy() if isinstance(live_trades,pd.DataFrame) else pd.DataFrame()
-            if not _closed.empty:
-                _cols=[c for c in ["Exit_Date","Entry_Date","Exit_Price","Exit_Type"] if c in _closed.columns]
-                st.dataframe(_closed[_cols].tail(5),hide_index=True,use_container_width=True,height=135)
-            else: st.caption("표시할 종료 거래가 없습니다.")
+        with st.container(key="order_table_tabs"):
+            _order_tabs=st.tabs(["전체","보유 슬롯","최근 종료"])
+            with _order_tabs[0]:
+                _preview=open_positions_display.copy() if isinstance(open_positions_display,pd.DataFrame) else pd.DataFrame()
+                if not _preview.empty:
+                    _cols=[c for c in ["슬롯","매수유형","매수일","전략 매수가","매수가","보유수량","현재 수익률","상태"] if c in _preview.columns]
+                    _bottom_preview=_preview[_cols].head(8).copy()
+                    _th="".join(f"<th>{_html_escape(str(c))}</th>" for c in _cols)
+                    _rows="".join(
+                        "<tr>"+"".join(f"<td>{_html_escape(str(v))}</td>" for v in row)+"</tr>"
+                        for row in _bottom_preview.itertuples(index=False,name=None)
+                    )
+                    st.markdown(
+                        f'<div class="ref-table-wrap"><table class="ref-data-table"><thead><tr>{_th}</tr></thead>'
+                        f'<tbody>{_rows}</tbody></table></div>',
+                        unsafe_allow_html=True,
+                    )
+                else: st.caption("표시할 실전 슬롯이 없습니다.")
+            with _order_tabs[1]:
+                st.caption(f"현재 {live_open_count}개 슬롯 보유 · 실제 체결가 변경은 아래 상세 관리에서 진행")
+            with _order_tabs[2]:
+                _closed=live_trades.copy() if isinstance(live_trades,pd.DataFrame) else pd.DataFrame()
+                if not _closed.empty:
+                    _cols=[c for c in ["Exit_Date","Entry_Date","Exit_Price","Exit_Type"] if c in _closed.columns]
+                    st.dataframe(_closed[_cols].tail(5),hide_index=True,use_container_width=True,height=135)
+                else: st.caption("표시할 종료 거래가 없습니다.")
 with _bottom_right:
     with st.container(border=True):
         st.markdown("<div id='redesign-performance'></div>",unsafe_allow_html=True)
