@@ -745,6 +745,25 @@ div.st-key-redesign_refresh button {height:64px!important;min-height:64px!import
 [data-testid="stVerticalBlockBorderWrapper"]{overflow:visible!important;}
 [data-testid="stDataFrame"]{background:transparent!important;}
 [data-testid="stDataFrame"] > div{background:transparent!important;}
+
+/* V8 – compact natural-height tables. No nested iframe, no internal scroll. */
+.ref-table-wrap{width:100%;overflow:visible;background:transparent;}
+.ref-data-table{width:100%;table-layout:fixed;border-collapse:collapse;background:transparent;color:#273b58;font-size:.78rem;}
+.ref-data-table th{font-size:.72rem;font-weight:750;color:#657994;text-align:left;padding:8px 7px;border-bottom:1px solid #dce5f1;white-space:nowrap;}
+.ref-data-table td{padding:9px 7px;border-bottom:1px solid #eef2f8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ref-data-table tr:last-child td{border-bottom:0;}
+.ref-data-table tbody tr:hover{background:rgba(42,103,210,.035);}
+.ref-data-table th:first-child,.ref-data-table td:first-child{text-align:center;}
+/* Reduce vertical bulk without globally shrinking typography. */
+.ref-action-card{padding:4px 0 5px!important;}
+.ref-action-amount{font-size:1.55rem!important;margin:0!important;}
+.ref-action-amount-label{margin-top:4px!important;}
+.ref-action-quotes{margin-top:3px!important;}
+.ref-action-meta{font-size:.68rem!important;margin:3px 0 0!important;}
+.ref-panel-head{min-height:22px!important;margin-bottom:3px!important;}
+.ref-account-item{padding:6px 7px!important;}
+.ref-account-value{margin:5px 0 3px!important;}
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -5974,7 +5993,17 @@ with _main_right:
             _pv=_open[_cols].head(7).copy()
             if "상태" in _pv:
                 _pv["상태"]=_pv["상태"].astype(str).str.replace("LOC(목표수익 매도) 대기","보유",regex=False).str.replace("MOC(종가 매도) 오늘 예정","오늘 매도",regex=False)
-            st.dataframe(_pv,use_container_width=True,hide_index=True,height=38*(len(_pv)+1)+4)
+            # Lightweight read-only preview (avoids Streamlit grid scroll chrome).
+            _pv_headers="".join(f"<th>{_html_escape(str(c))}</th>" for c in _cols)
+            _pv_rows="".join(
+                "<tr>"+"".join(f"<td>{_html_escape(str(v))}</td>" for v in row)+"</tr>"
+                for row in _pv.itertuples(index=False,name=None)
+            )
+            st.markdown(
+                f'<div class="ref-table-wrap"><table class="ref-data-table"><thead><tr>{_pv_headers}</tr></thead>'
+                f'<tbody>{_pv_rows}</tbody></table></div>',
+                unsafe_allow_html=True,
+            )
         else:
             st.caption("현재 보유 중인 슬롯이 없습니다.")
 
@@ -5988,7 +6017,17 @@ with _bottom_left:
             _preview=open_positions_display.copy() if isinstance(open_positions_display,pd.DataFrame) else pd.DataFrame()
             if not _preview.empty:
                 _cols=[c for c in ["슬롯","매수유형","매수일","전략 매수가","매수가","보유수량","현재 수익률","상태"] if c in _preview.columns]
-                st.dataframe(_preview[_cols].head(8),hide_index=True,use_container_width=True,height=38*(min(len(_preview),8)+1)+4)
+                _bottom_preview=_preview[_cols].head(8).copy()
+                _th="".join(f"<th>{_html_escape(str(c))}</th>" for c in _cols)
+                _rows="".join(
+                    "<tr>"+"".join(f"<td>{_html_escape(str(v))}</td>" for v in row)+"</tr>"
+                    for row in _bottom_preview.itertuples(index=False,name=None)
+                )
+                st.markdown(
+                    f'<div class="ref-table-wrap"><table class="ref-data-table"><thead><tr>{_th}</tr></thead>'
+                    f'<tbody>{_rows}</tbody></table></div>',
+                    unsafe_allow_html=True,
+                )
             else: st.caption("표시할 실전 슬롯이 없습니다.")
         with _order_tabs[1]:
             st.caption(f"현재 {live_open_count}개 슬롯 보유 · 실제 체결가 변경은 아래 상세 관리에서 진행")
