@@ -726,6 +726,25 @@ div.st-key-redesign_refresh button {height:64px!important;min-height:64px!import
 .ref-perf-grid strong{font-size:clamp(.98rem,1.2vw,1.25rem)!important;}
 @media(max-width:1250px){.ref-action-amount{font-size:1.55rem;}.ref-action-state-note{font-size:.68rem;}}
 
+
+/* V7 — one surface per panel; remove inner colored boxes and nested scrolling */
+.ref-action-card,.ref-action-buy,.ref-action-wait,.ref-action-check{
+ background:transparent!important;background-image:none!important;
+ border:0!important;border-radius:0!important;padding:8px 0!important;
+ box-shadow:none!important;
+}
+.ref-action-qty{background:transparent!important;border:0!important;padding:3px 0!important;border-radius:0!important;}
+.ref-action-meta{background:transparent!important;border:0!important;padding:4px 0!important;}
+.ref-account-item{background:transparent!important;border:0!important;box-shadow:none!important;
+ border-radius:0!important;padding:9px 9px!important;}
+.ref-account-item:not(:last-child){border-right:1px solid #e5ebf4!important;}
+.ref-account-grid{background:transparent!important;gap:0!important;}
+.ref-bar-track{background:transparent!important;border:1px solid #e7edf6!important;}
+.ref-kpi{background:#fff!important;}
+.ref-panel-head{margin-bottom:7px!important;}
+[data-testid="stVerticalBlockBorderWrapper"]{overflow:visible!important;}
+[data-testid="stDataFrame"]{background:transparent!important;}
+[data-testid="stDataFrame"] > div{background:transparent!important;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -5851,7 +5870,7 @@ st.markdown('<div class="ref-kpi-grid">'+''.join(
 
 _main_left,_main_right=st.columns([1.65,1],gap="small")
 with _main_left:
-    with st.container(height=535,border=True):
+    with st.container(border=True):
         _chart_title_col,_period_col=st.columns([1.6,1.35],vertical_alignment="center",gap="small")
         with _chart_title_col:
             _panel_title("chart","누적 자산곡선")
@@ -5891,7 +5910,7 @@ with _main_left:
             st.info("선택 전략의 누적자산 자료가 없습니다.")
 
 with _main_right:
-    with st.container(height=205,border=True):
+    with st.container(border=True):
         _panel_title("target","TODAY'S ACTION · 오늘 주문",str(action_session.date()))
         # The trading signal is based on confirmed closes. Intraday quotes are
         # used only to estimate order quantities, never to change BUY/WAIT.
@@ -5939,37 +5958,37 @@ with _main_right:
             st.caption("수량은 현재 참고시세 추정치 · 실제 주문 수량은 체결가에 따라 달라집니다.")
         else:
             st.caption("확정 일봉 기준 매수 판단 · 기존 보유 슬롯의 매도 주문은 별도 확인")
-    with st.container(height=145,border=True):
+    with st.container(border=True):
         _panel_title("wallet","현재 계좌","확정 자료")
         _acct=[("현금",_asset_cash,_asset_cash_pct),("투자 평가액",_asset_invested,_asset_invest_pct),("총자산",_asset_nav,1.0)]
         st.markdown('<div class="ref-account-grid">'+''.join(
           '<div class="ref-account-item"><div class="ref-account-name">'+_html_escape(n)+
           '</div><div class="ref-account-value">₩'+f'{v:,.0f}'+
           '</div><div class="ref-account-sub">'+f'{p:.1%}'+'</div></div>' for n,v,p in _acct)+'</div>',unsafe_allow_html=True)
-    with st.container(height=145,border=True):
+    with st.container(border=True):
         st.markdown("<div id='redesign-slot-preview'></div>",unsafe_allow_html=True)
         _panel_title("grid","보유 슬롯 미리보기")
         _open=open_positions_display.copy() if isinstance(open_positions_display,pd.DataFrame) else pd.DataFrame()
         if not _open.empty:
-            _cols=[c for c in ["슬롯","매수일","매수가","보유수량","현재 수익률","상태"] if c in _open.columns]
-            _pv=_open[_cols].head(4).copy()
+            _cols=[c for c in ["슬롯","매수일","보유수량","현재 수익률","상태"] if c in _open.columns]
+            _pv=_open[_cols].head(7).copy()
             if "상태" in _pv:
                 _pv["상태"]=_pv["상태"].astype(str).str.replace("LOC(목표수익 매도) 대기","보유",regex=False).str.replace("MOC(종가 매도) 오늘 예정","오늘 매도",regex=False)
-            st.dataframe(_pv,use_container_width=True,hide_index=True,height=125)
+            st.dataframe(_pv,use_container_width=True,hide_index=True,height=38*(len(_pv)+1)+4)
         else:
             st.caption("현재 보유 중인 슬롯이 없습니다.")
 
 st.markdown("<div id='redesign-order-management'></div>",unsafe_allow_html=True)
 _bottom_left,_bottom_right=st.columns([1.65,1],gap="small")
 with _bottom_left:
-    with st.container(height=230,border=True):
+    with st.container(border=True):
         _panel_title("file","상세 주문 · 슬롯 편집 · 실제 체결가 관리")
         _order_tabs=st.tabs(["전체","보유 슬롯","최근 종료"])
         with _order_tabs[0]:
             _preview=open_positions_display.copy() if isinstance(open_positions_display,pd.DataFrame) else pd.DataFrame()
             if not _preview.empty:
                 _cols=[c for c in ["슬롯","매수유형","매수일","전략 매수가","매수가","보유수량","현재 수익률","상태"] if c in _preview.columns]
-                st.dataframe(_preview[_cols].head(8),hide_index=True,use_container_width=True,height=135)
+                st.dataframe(_preview[_cols].head(8),hide_index=True,use_container_width=True,height=38*(min(len(_preview),8)+1)+4)
             else: st.caption("표시할 실전 슬롯이 없습니다.")
         with _order_tabs[1]:
             st.caption(f"현재 {live_open_count}개 슬롯 보유 · 실제 체결가 변경은 아래 상세 관리에서 진행")
@@ -5980,7 +5999,7 @@ with _bottom_left:
                 st.dataframe(_closed[_cols].tail(5),hide_index=True,use_container_width=True,height=135)
             else: st.caption("표시할 종료 거래가 없습니다.")
 with _bottom_right:
-    with st.container(height=230,border=True):
+    with st.container(border=True):
         st.markdown("<div id='redesign-performance'></div>",unsafe_allow_html=True)
         _panel_title("bars","전략 성과 요약","백테스트")
         _curve=current_result.get("equity",pd.DataFrame())
