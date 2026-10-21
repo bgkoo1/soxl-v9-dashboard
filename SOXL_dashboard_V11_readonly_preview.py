@@ -37,6 +37,25 @@ CRASH_THRESHOLD = -0.09
 CRASH_LOC_MULTIPLIER = 0.91
 from SOXL_V10_backtest import run_v10_backtest
 
+
+def calculate_v11_statistics_safe(trades, equity, initial_capital, max_open_positions):
+    """Avoid CAGR overflow in very short V11 transition periods; never modify equity."""
+    try:
+        return calculate_v9_statistics(trades, equity, initial_capital, max_open_positions)
+    except OverflowError:
+        if equity.empty:
+            raise
+        temporary_equity = equity.copy()
+        temporary_equity.loc[temporary_equity.index[0], "Date"] = (
+            pd.Timestamp(temporary_equity["Date"].iloc[-1]) - pd.Timedelta(days=366)
+        )
+        result = calculate_v9_statistics(trades, temporary_equity, initial_capital, max_open_positions)
+        result["cagr"] = float("nan")
+        result["calmar"] = float("nan")
+        result["annualization_warning"] = "Short V11 transition: CAGR/Calmar unavailable."
+        return result
+
+
 def run_v11_backtest(
     raw_df,
     initial_capital=INITIAL_CAPITAL,
@@ -275,7 +294,7 @@ def run_v11_backtest(
     trades_df = pd.DataFrame(trades)
     equity_df = pd.DataFrame(equity_records)
     daily_df = pd.DataFrame(daily_records)
-    stats = calculate_v9_statistics(trades_df, equity_df, initial_capital, max_open_positions)
+    stats = calculate_v11_statistics_safe(trades_df, equity_df, initial_capital, max_open_positions)
     stats.update({
         "risk_days": int(risk_days),
         "risk_skip_days": int(risk_skip_days),
@@ -4158,6 +4177,7 @@ if "v9_persisted_state_loaded" not in st.session_state:
     persisted_state, persisted_status = _load_persisted_v9_state()
     st.session_state["v9_settings"] = persisted_state.get("settings", {})
     st.session_state["v9_quantity_overrides"] = persisted_state.get("quantities", {})
+    st.session_state["v11_explicit_saved_quantities"] = dict(persisted_state.get("quantities", {}))
     st.session_state["v9_entry_price_overrides"] = persisted_state.get("entry_prices", {})
     st.session_state["v9_excluded_positions"] = persisted_state.get("excluded_positions", [])
     st.session_state["v9_cashflows"] = persisted_state.get("cashflows", [])
@@ -4606,27 +4626,6 @@ stats = current_result["stats"]
 base_stats = base_result["stats"]
 trades = current_result["trades"]
 
-# V11: diagnostic-only dry run. No broker connectivity or order submission.
-if strategy_mode.startswith("V11"):
-    with st.expander("🔎 V11 주문 진단 미리보기 (읽기 전용 · 실거래 불가)", expanded=False):
-        st.caption("백테스트의 가상 슬롯으로 만든 참고 주문입니다. 실제 보유·미체결 주문·다음 거래일 신호가 확인되지 않아 주문 실행에 사용할 수 없습니다.")
-        try:
-            from v11_readonly_adapter import compare_diagnostic
-            diagnostic = compare_diagnostic(v11_raw_result)
-            if diagnostic.get("orders"):
-                st.dataframe(pd.DataFrame(diagnostic["orders"]), use_container_width=True, hide_index=True)
-            else:
-                st.info("진단 주문이 없습니다.")
-            if diagnostic.get("d2_flags_to_save"):
-                st.warning("D2 신호는 진단용이며, 실제 매매 판단에 사용하려면 거래일과 실제 체결 내역 검증이 필요합니다.")
-                st.dataframe(pd.DataFrame(diagnostic["d2_flags_to_save"]), use_container_width=True, hide_index=True)
-            for message in diagnostic.get("warnings", []):
-                st.caption("주의: " + str(message))
-            for message in diagnostic.get("notes", []):
-                st.caption("진단: " + str(message))
-        except Exception as exc:
-            st.error("읽기 전용 주문 진단을 생성하지 못했습니다: " + str(exc))
-
 # 비교용 전략 결과를 한곳에서 관리합니다.
 comparison_results = {
     "V7 Base(기본 전략)": base_result,
@@ -4932,6 +4931,32 @@ else:
         as_of_date=position_reference_date,
         holding_days=(BASE_HOLDING_DAYS if not is_custom else holding_days),
     )
+
+# V11: existing saved portfolio -> read-only signal view, not simulated orders.
+if strategy_mode.startswith("V11"):
+    with st.expander("🔎 V11 저장된 실전 슬롯 진단 (읽기 전용 · 주문 불가)", expanded=False):
+        st.caption("백테스트 기간이 아니라 실전 운용 슬롯과 사용자 저장 수량을 기준으로 표시합니다. 저장 수량은 증권사 잔고 확인값이 아닙니다.")
+        try:
+            from v11_saved_portfolio_diagnostic import build_rows
+            last_index = int(live_result["signal_data"].iloc[-1]["Original_Index"])
+            explicit_saved = st.session_state.get("v11_explicit_saved_quantities", {})
+            rows = build_rows(
+                live_result.get("open_positions", []), explicit_saved,
+                st.session_state.get("v9_entry_price_overrides", {}),
+                st.session_state.get("v9_excluded_positions", []),
+                v9_position_key, last_index, live_close,
+                target_return=0.027, holding_days_limit=7, d2_cut=-0.10,
+            )
+            if rows:
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                unverified = sum(r["저장된 수량(주)"] is None for r in rows)
+                st.caption(f"실전 전략 슬롯 {len(rows)}개 · 저장 수량 미확인 {unverified}개")
+            else:
+                st.info("현재 실전 전략에서 진단할 보유 슬롯이 없습니다. 저장된 수동거래는 별도로 확인해야 합니다.")
+            st.warning("진단 전용: 실제 보유 잔고, 미체결 LOC 주문, 거래일·주문 마감 시각은 검증되지 않았습니다. 여기 표시된 신호로 주문하지 마세요.")
+            st.caption("수동 매매기록 및 과거 청산거래는 기존 대시보드에서 계속 관리하며, 이 표에는 현재 열린 전략 슬롯만 표시합니다.")
+        except Exception as exc:
+            st.error("저장된 실전 슬롯 진단을 표시하지 못했습니다: " + str(exc))
 
 # 실제 신규매수 행동은 시장 신호 + 현재 포트폴리오의 슬롯/현금을 함께 봅니다.
 max_slots_for_live = max_positions if is_custom else BASE_MAX_POSITIONS
