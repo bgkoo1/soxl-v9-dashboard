@@ -292,89 +292,80 @@ def get_expected_latest_trading_day():
 
 
 def update_soxl_data(file_path=DATA_FILE):
+    """Fail closed: cross-check Nasdaq against Yahoo, including recent revisions."""
     existing = load_existing_data(file_path)
     old_last = existing["Date"].max().normalize()
     expected_last = get_expected_latest_trading_day()
     start_date = (old_last - pd.Timedelta(days=LOOKBACK_DAYS)).date()
     end_date = get_download_end_date()
+    print(f"CSV latest={old_last.date()}, expected={expected_last.date()}, start={start_date}")
 
-    print(f"현재 CSV 마지막 날짜 : {old_last.date()}")
-    print(f"완료된 최신 거래일    : {expected_last.date()}")
-    print(f"재조회 시작일        : {start_date}")
-    print(f"재조회 종료일        : {end_date} (exclusive)")
-    print(f"yfinance 버전        : {getattr(yf, '__version__', 'unknown')}")
-
-    # 이미 최신이면 파일을 다시 쓰지 않고 정상 종료한다.
-    if old_last >= expected_last:
-        msg = f"이미 최신 데이터입니다: {old_last.date()}"
-        print(msg)
-        return {
-            "updated": False,
-            "rows_added": 0,
-            "rows_refreshed": 0,
-            "old_last_date": old_last.date(),
-            "new_last_date": old_last.date(),
-            "downloaded_last_date": old_last.date(),
-            "expected_last_date": expected_last.date(),
-            "source": "NONE",
-            "message": msg,
-        }
-
-    downloaded = pd.DataFrame()
-    source = "NONE"
-    for attempt in range(1, 4):
-        print(f"\n=== 다운로드 시도 {attempt}/3 ===")
-        downloaded, source = download_recent_data(start_date, end_date)
-        if not downloaded.empty and downloaded["Date"].max().normalize() >= expected_last:
+    # Independent source confirmation. Nasdaq reports unadjusted market prices;
+    # Yahoo auto_adjust=True can be dividend-adjusted, so use raw Yahoo OHLC.
+    yahoo = pd.DataFrame()
+    for attempt in range(3):
+        try:
+            raw = yf.download(
+                TICKER, start=start_date, end=end_date, interval="1d",
+                auto_adjust=False, actions=False, repair=False, prepost=False,
+                progress=False, threads=False, multi_level_index=False,
+            )
+            yahoo = normalize_dataframe(raw.reset_index()) if not raw.empty else pd.DataFrame()
+        except Exception as exc:
+            print(f"Yahoo raw fetch failed: {exc}")
+        if not yahoo.empty and yahoo["Date"].max().normalize() >= expected_last:
             break
-        if attempt < 3:
+        if attempt < 2:
             time.sleep(8)
 
-    if downloaded.empty:
-        raise RuntimeError("모든 데이터 소스가 빈 결과를 반환했습니다. Actions 로그를 확인하세요.")
+    nasdaq = download_nasdaq_recent(start_date, end_date)
+    if yahoo.empty or nasdaq.empty:
+        raise RuntimeError("Independent Yahoo/Nasdaq verification unavailable; CSV unchanged.")
+    y = yahoo.set_index("Date")
+    n = nasdaq.set_index("Date")
+    if expected_last not in y.index or expected_last not in n.index:
+        raise RuntimeError(f"Latest completed session {expected_last.date()} missing from Yahoo or Nasdaq; CSV unchanged.")
 
-    downloaded_last = downloaded["Date"].max().normalize()
-    print(f"통합 다운로드 마지막 날짜: {downloaded_last.date()} ({source})")
-
-    # 완료된 최신 거래일까지 확보하지 못했으면 성공 처리하지 않는다.
-    if downloaded_last < expected_last:
-        raise RuntimeError(
-            "최신 완료 거래일 데이터 확보 실패: "
-            f"CSV={old_last.date()}, 다운로드={downloaded_last.date()}, 기대={expected_last.date()}, source={source}"
-        )
-
-    # 기존 이력은 그대로 보존하고, 실제 신규 날짜만 append한다.
-    new_rows = downloaded[(downloaded["Date"] > old_last) & (downloaded["Date"] <= expected_last)].copy()
-    new_rows = normalize_dataframe(new_rows)
-    if new_rows.empty:
-        raise RuntimeError(
-            f"다운로드는 {downloaded_last.date()}까지 왔지만 CSV {old_last.date()} 이후 신규 행이 없습니다."
-        )
-
-    merged = pd.concat([existing, new_rows], ignore_index=True)
-    merged = normalize_dataframe(merged)
-    new_last = merged["Date"].max().normalize()
-    rows_added = len(new_rows)
-
-    if new_last < expected_last:
-        raise RuntimeError(
-            f"병합 후 최신일이 기대 거래일보다 오래되었습니다: 병합={new_last.date()}, 기대={expected_last.date()}"
-        )
-
-    merged.to_csv(file_path, index=False)
-    msg = f"SOXL 데이터 업데이트 완료: {old_last.date()} → {new_last.date()} ({source})"
-    print(msg)
-
+    # Require agreement on all overlapping sessions. 1% accommodates
+    # minor provider rounding, but prevents large unverified differences.
+    common = y.index.intersection(n.index)
+    if len(common) == 0:
+        raise RuntimeError("No common dates between providers; CSV unchanged.")
+    for dt in common:
+        for col in ("Open", "High", "Low", "Close"):
+            ya, na = float(y.loc[dt, col]), float(n.loc[dt, col])
+            if not (pd.notna(ya) and pd.notna(na) and ya > 0 and na > 0):
+                raise RuntimeError(f"Invalid {col} on {dt.date()}; CSV unchanged.")
+            if abs(ya / na - 1) > 0.01:
+                raise RuntimeError(
+                    f"Price mismatch {dt.date()} {col}: Yahoo={ya}, Nasdaq={na}; CSV unchanged."
+                )
+    # Use Nasdaq confirmed raw prices for overlapping dates, including
+    # corrections to previously saved recent days. No partial/unverified writes.
+    confirmed = nasdaq[nasdaq["Date"].isin(common) & (nasdaq["Date"] <= expected_last)].copy()
+    confirmed = normalize_dataframe(confirmed)
+    if expected_last not in set(confirmed["Date"]):
+        raise RuntimeError("No confirmed latest bar; CSV unchanged.")
+    historical = existing[~existing["Date"].isin(confirmed["Date"])]
+    merged = normalize_dataframe(pd.concat([historical, confirmed], ignore_index=True))
+    changed = not merged.equals(existing)
+    if changed:
+        import os
+        import tempfile
+        path = Path(file_path)
+        with tempfile.NamedTemporaryFile("w", dir=path.parent, suffix=".csv", delete=False) as tmp:
+            temp_name = tmp.name
+            merged.to_csv(tmp, index=False)
+        os.replace(temp_name, path)
     return {
-        "updated": True,
-        "rows_added": int(rows_added),
-        "rows_refreshed": 0,
+        "updated": changed,
+        "rows_added": int((confirmed["Date"] > old_last).sum()),
+        "rows_refreshed": int((confirmed["Date"] <= old_last).sum()),
         "old_last_date": old_last.date(),
-        "new_last_date": new_last.date(),
-        "downloaded_last_date": downloaded_last.date(),
+        "new_last_date": merged["Date"].max().date(),
         "expected_last_date": expected_last.date(),
-        "source": source,
-        "message": msg,
+        "source": "NASDAQ_VERIFIED_AGAINST_YAHOO_RAW",
+        "message": "Verified data saved" if changed else "Verified data unchanged",
     }
 
 
