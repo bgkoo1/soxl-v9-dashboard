@@ -174,6 +174,24 @@ with tabs[2]:
             st.caption("모델 미청산 슬롯은 실제 증권사 보유와 다를 수 있습니다.")
         except Exception as exc:
             st.warning(f"모델 재구성 보류: {type(exc).__name__}: {exc}")
+    st.subheader("모델 슬롯 ↔ 저장 기록 대조")
+    st.caption("진단 결과는 실계좌 확인이 아닌 저장 데이터 정합성 검사입니다.")
+    if saved is not None:
+        try:
+            from v11_hybrid_model_slots import audit_saved_vs_model
+            audit_rows=audit_saved_vs_model(prices,saved)
+            audit_df=pd.DataFrame(audit_rows)
+            if not audit_df.empty:
+                st.dataframe(audit_df,use_container_width=True,hide_index=True,height=350)
+                st.download_button("슬롯 대조표 CSV 다운로드",
+                    audit_df.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="SOXL_V11_slot_reconciliation_readonly.csv",mime="text/csv")
+                st.caption("모델과 저장값이 연결되더라도 실제 잔고로 확정하지 않습니다.")
+            else:
+                st.info("대조할 저장 기록이 없습니다.")
+        except Exception as exc:
+            st.warning(f"슬롯 대조 보류: {type(exc).__name__}: {exc}")
+    st.divider()
     st.subheader("슬롯별 과거 저장 기록")
     st.warning("현재 보유 여부는 아직 확인되지 않았습니다. 아래는 저장된 과거 수량 기록이며 실계좌 보유 목록이 아닙니다.")
     entry=(saved or {}).get("entry_prices",{})
