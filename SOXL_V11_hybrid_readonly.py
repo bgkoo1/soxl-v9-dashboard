@@ -3,6 +3,7 @@ Independent Streamlit entrypoint. Never writes to GitHub or places orders.
 """
 import base64
 import json
+from io import BytesIO
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import pandas as pd
@@ -46,14 +47,49 @@ def saved_table(value,columns=None):
     else:rows=[]
     return pd.DataFrame(rows)
 
-@st.cache_data(ttl=300,show_spinner=False)
-def load_prices():
-    df=pd.read_csv("SOXL_adjusted.csv")
-    df["Date"]=pd.to_datetime(df["Date"],errors="coerce")
-    return df.sort_values("Date")
+@st.cache_data(ttl=60,show_spinner=False)
+def load_prices(repo,branch,token):
+    """Always fetch current GitHub CSV; never silently fall back to stale local file."""
+    url=f"https://api.github.com/repos/{repo}/contents/SOXL_adjusted.csv"
+    response=requests.get(
+        url,
+        headers={"Authorization":f"Bearer {token}","Accept":"application/vnd.github+json"},
+        params={"ref":branch},
+        timeout=20,
+    )
+    response.raise_for_status()
+    body=response.json()
+    if body.get("encoding")=="base64" and body.get("content"):
+        raw=base64.b64decode(body["content"])
+    elif body.get("download_url"):
+        download=requests.get(body["download_url"],timeout=20)
+        download.raise_for_status()
+        raw=download.content
+    else:
+        raise ValueError("GitHub CSV response has no usable content")
+    df=pd.read_csv(BytesIO(raw))
+    for col in ("Date","Open","High","Low","Close","Volume"):
+        if col not in df.columns:
+            raise ValueError(f"Missing CSV column: {col}")
+    df["Date"]=pd.to_datetime(df["Date"],errors="raise")
+    for col in ("Open","High","Low","Close"):
+        df[col]=pd.to_numeric(df[col],errors="raise")
+    if df.empty or df["Date"].duplicated().any():
+        raise ValueError("Empty or duplicate-date SOXL CSV")
+    if (df[["Open","High","Low","Close"]]<=0).any().any():
+        raise ValueError("Invalid nonpositive OHLC values")
+    return df.sort_values("Date").reset_index(drop=True)
 
 saved,error=read_saved()
-prices=load_prices()
+try:
+    prices=load_prices(
+        st.secrets.get("GITHUB_REPO","bgkoo1/soxl-v9-dashboard"),
+        st.secrets.get("GITHUB_BRANCH","main"),
+        st.secrets.get("GITHUB_TOKEN",""),
+    )
+except Exception:
+    st.error("GitHub 최신 SOXL 가격 데이터를 가져오지 못했습니다. 오래된 로컬 가격으로 대체하지 않습니다.")
+    st.stop()
 last=prices.iloc[-1]
 if error:
     st.error(error)
@@ -64,6 +100,7 @@ from data_updater import get_expected_latest_trading_day
 expected=get_expected_latest_trading_day().date()
 if pd.Timestamp(last["Date"]).date()<expected:
     st.error(f"가격 데이터 갱신 지연: 마지막 저장 {pd.Timestamp(last['Date']).date()} / 마지막 확정 예상 거래일 {expected}. 해당 데이터로 매매 판단 금지.")
+st.caption("가격 데이터 출처: GitHub main 브랜치의 최신 SOXL_adjusted.csv · 최대 60초 캐시")
 st.caption(f"SOXL 저장 일봉: {pd.Timestamp(last['Date']).date()} · 종가 ${float(last['Close']):,.4f} · 출처 검증 상태: 미확인")
 
 q=(saved or {}).get("quantities",{})
@@ -94,7 +131,7 @@ with tabs[0]:
     st.subheader("가격 추이")
     st.line_chart(prices.tail(90).set_index("Date")["Close"],height=270)
     if pd.Timestamp(last["Date"]).date()<expected:
-        st.warning("위 차트는 지연된 로컬 CSV의 과거 데이터이며 최신 가격이 아닙니다.")
+        st.warning("위 차트는 GitHub에 저장된 지연된 데이터이며 최신 가격이 아닙니다.")
     st.subheader("보유 슬롯 요약")
     st.info("현재 보유 슬롯은 전략 엔진의 미청산 상태와 실제 증권사 잔고 대조 전까지 표시하지 않습니다.")
     st.caption(f"참고: 과거 수량 오버라이드 {len(historical_qty)}건은 현재 보유 수량이 아닙니다.")
