@@ -137,23 +137,55 @@ with tabs[0]:
     st.caption(f"참고: 과거 수량 오버라이드 {len(historical_qty)}건은 현재 보유 수량이 아닙니다.")
     st.caption("예수금·총평가자산·실현손익은 계좌 조회 또는 체결원장 검증 전까지 표시하지 않습니다.")
 with tabs[1]:
-    st.subheader("저장된 수동 청산 거래")
-    st.dataframe(saved_table(manual),use_container_width=True,hide_index=True)
-    st.subheader("체결 수정 내역")
-    st.dataframe(saved_table(overrides),use_container_width=True,hide_index=True)
-    st.subheader("입출금 내역")
-    st.dataframe(saved_table(flows),use_container_width=True,hide_index=True)
-    st.caption("서로 다른 저장 형식의 기록을 임의로 합치거나 실거래 체결로 확정하지 않습니다.")
+    st.subheader("거래 원장 · 저장 기록 조회")
+    st.caption("암호화 파일에 저장된 사용자 기록만 표시합니다. 백테스트 가상 체결과 증권사 실제 체결을 혼합하지 않습니다.")
+    source=st.radio("기록 유형",["수동 청산","체결가 수정","입출금"],horizontal=True)
+    datasets={"수동 청산":manual,"체결가 수정":overrides,"입출금":flows}
+    ledger=saved_table(datasets[source])
+    if ledger.empty:
+        st.info("해당 유형의 저장 기록이 없습니다.")
+    else:
+        date_columns=[c for c in ledger.columns if any(w in str(c).lower() for w in ("date","날짜","일시","time"))]
+        search=st.text_input("원장 검색",placeholder="슬롯 ID, 날짜, 가격 등",key="ledger_search")
+        if search.strip():
+            matches=ledger.astype(str).apply(lambda col:col.str.contains(search.strip(),case=False,regex=False,na=False)).any(axis=1)
+            ledger=ledger.loc[matches]
+        if date_columns:
+            date_col=st.selectbox("날짜 필터 기준",["전체"]+date_columns)
+            if date_col!="전체":
+                parsed=pd.to_datetime(ledger[date_col],errors="coerce")
+                available=parsed.dropna()
+                if not available.empty:
+                    lower,upper=available.min().date(),available.max().date()
+                    chosen=st.date_input("조회 기간",(lower,upper),min_value=lower,max_value=upper)
+                    if isinstance(chosen,(list,tuple)) and len(chosen)==2:
+                        ledger=ledger.loc[parsed.dt.date.between(chosen[0],chosen[1])]
+        st.caption(f"검색 결과 {len(ledger):,}건 · 전체 원본 {len(saved_table(datasets[source])):,}건")
+        st.dataframe(ledger,use_container_width=True,hide_index=True,height=420)
+        st.download_button("현재 검색 결과 CSV 내려받기",ledger.to_csv(index=False).encode("utf-8-sig"),
+                           file_name=f"SOXL_V11_{source}_readonly.csv",mime="text/csv")
 with tabs[2]:
-    st.subheader("과거 저장된 슬롯별 수량 기록 (현재 보유 아님)")
+    st.subheader("슬롯별 과거 저장 기록")
+    st.warning("현재 보유 여부는 아직 확인되지 않았습니다. 아래는 저장된 과거 수량 기록이며 실계좌 보유 목록이 아닙니다.")
     entry=(saved or {}).get("entry_prices",{})
     entry=entry if isinstance(entry,dict) else {}
-    rows=[{"슬롯 키":k,"저장 수량":v,"저장 매수가($)":entry.get(k),
-           "상태":"과거 저장값 · 현재 보유 여부 미확인"} for k,v in historical_qty.items()]
-    st.dataframe(pd.DataFrame(rows,columns=["슬롯 키","저장 수량","저장 매수가($)","상태"]),
-                 use_container_width=True,hide_index=True)
-    st.warning("이 표는 과거 수량 기록을 포함하며, 현재 보유 슬롯 목록으로 사용하면 안 됩니다.")
-    st.caption("D2/D3·TIME 및 목표가 신호는 전략 엔진과 슬롯 원장 대조 후 추가할 예정입니다.")
+    excluded=(saved or {}).get("excluded_positions",[])
+    excluded=set(excluded) if isinstance(excluded,list) else set()
+    keys=sorted(set(valid_q)|set(entry))
+    rows=[{
+        "슬롯 키":key,
+        "저장 수량(주)":valid_q.get(key),
+        "저장 매수가($)":entry.get(key),
+        "제외 기록":"있음" if key in excluded else "없음",
+        "현재 보유 여부":"미검증",
+    } for key in keys]
+    history=pd.DataFrame(rows,columns=["슬롯 키","저장 수량(주)","저장 매수가($)","제외 기록","현재 보유 여부"])
+    term=st.text_input("슬롯 키 검색",key="slot_search")
+    if term.strip():
+        history=history[history["슬롯 키"].astype(str).str.contains(term.strip(),case=False,regex=False)]
+    st.caption(f"표시 {len(history):,}건 · 저장 키 전체 {len(keys):,}건")
+    st.dataframe(history,use_container_width=True,hide_index=True,height=420)
+    st.caption("현재 슬롯(최대 7개), D2/D3 및 TIME 상태는 V11 엔진 재구성과 실제 체결·잔고 대조를 마친 후 표시합니다.")
 with tabs[3]:
     st.subheader("자동매매 안전 상태")
     st.warning("실거래 비활성화 · 기존 슬롯 정리 및 계좌 대조 전까지 자동주문 금지")
