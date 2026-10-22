@@ -299,64 +299,85 @@ def get_expected_latest_trading_day():
 
 
 def update_soxl_data(file_path=DATA_FILE):
-    """Fail closed: cross-check Nasdaq against Yahoo, including recent revisions."""
+    """Yahoo-only adjusted OHLC updater; fail closed on malformed or stale data.
+
+    Two Yahoo interfaces are a consistency check, NOT independent confirmation.
+    Existing historical bars are preserved outside the recent refresh window.
+    No broker orders or encrypted portfolio writes.
+    """
     existing = load_existing_data(file_path)
+    if existing.empty:
+        raise RuntimeError("Historical CSV empty; refusing to overwrite.")
     old_last = existing["Date"].max().normalize()
     expected_last = get_expected_latest_trading_day()
     start_date = (old_last - pd.Timedelta(days=LOOKBACK_DAYS)).date()
     end_date = get_download_end_date()
-    print(f"CSV latest={old_last.date()}, expected={expected_last.date()}, start={start_date}")
+    print(f"CSV latest={old_last.date()}, expected={expected_last.date()}, start={start_date}", flush=True)
 
-    # Independent source confirmation. Nasdaq reports unadjusted market prices;
-    # Yahoo auto_adjust=True can be dividend-adjusted, so use raw Yahoo OHLC.
-    yahoo = pd.DataFrame()
-    for attempt in range(3):
-        try:
-            raw = yf.download(
-                TICKER, start=start_date, end=end_date, interval="1d",
-                auto_adjust=False, actions=False, repair=False, prepost=False,
-                progress=False, threads=False, multi_level_index=False,
-            )
-            yahoo = normalize_dataframe(raw.reset_index()) if not raw.empty else pd.DataFrame()
-        except Exception as exc:
-            print(f"Yahoo raw fetch failed: {exc}")
-        if not yahoo.empty and yahoo["Date"].max().normalize() >= expected_last:
-            break
-        if attempt < 2:
-            time.sleep(8)
+    # The historical file was built with adjusted Yahoo bars. Do not mix in
+    # Nasdaq raw OHLC or Yahoo auto_adjust=False (dividend/split discontinuity).
+    download = download_yfinance_download(start_date, end_date)
+    history = download_yfinance_history()
+    if not history.empty:
+        history = history[
+            (history["Date"].dt.date >= start_date) &
+            (history["Date"].dt.date < end_date)
+        ].copy()
+    print(f"YAHOO_DIAGNOSTIC download_rows={len(download)} history_rows={len(history)}", flush=True)
 
-    nasdaq = download_nasdaq_recent(start_date, end_date)
-    if yahoo.empty or nasdaq.empty:
-        print(f"VERIFY_DIAGNOSTIC yahoo_rows={len(yahoo)} nasdaq_rows={len(nasdaq)} expected={expected_last.date()}")
-        print(f"VERIFY_DIAGNOSTIC yahoo_last={yahoo['Date'].max() if not yahoo.empty else 'NONE'} nasdaq_last={nasdaq['Date'].max() if not nasdaq.empty else 'NONE'}")
-        raise RuntimeError("Independent Yahoo/Nasdaq verification unavailable; CSV unchanged.")
-    y = yahoo.set_index("Date")
-    n = nasdaq.set_index("Date")
-    if expected_last not in y.index or expected_last not in n.index:
-        raise RuntimeError(f"Latest completed session {expected_last.date()} missing from Yahoo or Nasdaq; CSV unchanged.")
+    if download.empty or history.empty:
+        raise RuntimeError("Yahoo adjusted download/history unavailable; CSV unchanged.")
+    d = download.set_index("Date")
+    h = history.set_index("Date")
+    if expected_last not in d.index or expected_last not in h.index:
+        raise RuntimeError(
+            f"Expected confirmed session {expected_last.date()} missing from Yahoo; CSV unchanged."
+        )
+    common = d.index.intersection(h.index)
+    if len(common) < 3:
+        raise RuntimeError("Too few overlapping Yahoo sessions; CSV unchanged.")
 
-    # Require agreement on all overlapping sessions. 1% accommodates
-    # minor provider rounding, but prevents large unverified differences.
-    common = y.index.intersection(n.index)
-    if len(common) == 0:
-        raise RuntimeError("No common dates between providers; CSV unchanged.")
     for dt in common:
         for col in ("Open", "High", "Low", "Close"):
-            ya, na = float(y.loc[dt, col]), float(n.loc[dt, col])
-            if not (pd.notna(ya) and pd.notna(na) and ya > 0 and na > 0):
-                raise RuntimeError(f"Invalid {col} on {dt.date()}; CSV unchanged.")
-            if abs(ya / na - 1) > 0.01:
+            dv, hv = float(d.loc[dt, col]), float(h.loc[dt, col])
+            if not (pd.notna(dv) and pd.notna(hv) and dv > 0 and hv > 0):
+                raise RuntimeError(f"Invalid Yahoo {col} {dt.date()}; CSV unchanged.")
+            if abs(dv / hv - 1) > 0.001:
                 raise RuntimeError(
-                    f"Price mismatch {dt.date()} {col}: Yahoo={ya}, Nasdaq={na}; CSV unchanged."
+                    f"Yahoo interface mismatch {dt.date()} {col}: {dv} vs {hv}; CSV unchanged."
                 )
-    # Use Nasdaq confirmed raw prices for overlapping dates, including
-    # corrections to previously saved recent days. No partial/unverified writes.
-    confirmed = nasdaq[nasdaq["Date"].isin(common) & (nasdaq["Date"] <= expected_last)].copy()
-    confirmed = normalize_dataframe(confirmed)
-    if expected_last not in set(confirmed["Date"]):
-        raise RuntimeError("No confirmed latest bar; CSV unchanged.")
+
+    confirmed = normalize_dataframe(download[
+        (download["Date"] <= expected_last) &
+        (download["Date"] >= pd.Timestamp(start_date))
+    ])
+    if confirmed.empty or expected_last not in set(confirmed["Date"]):
+        raise RuntimeError("Missing latest Yahoo adjusted session; CSV unchanged.")
+    if confirmed["Date"].max() > expected_last:
+        raise RuntimeError("Unconfirmed future bar detected; CSV unchanged.")
+    for _, row in confirmed.iterrows():
+        o, hi, lo, c = (float(row[k]) for k in ("Open", "High", "Low", "Close"))
+        if not (lo > 0 and lo <= min(o, c) and hi >= max(o, c)):
+            raise RuntimeError(f"Invalid OHLC bounds {row['Date']}; CSV unchanged.")
+        if pd.isna(row["Volume"]) or float(row["Volume"]) < 0:
+            raise RuntimeError(f"Invalid volume {row['Date']}; CSV unchanged.")
+
+    # Do not silently rewrite historical bars with unexpectedly large revisions.
+    old = existing.set_index("Date")
+    fresh = confirmed.set_index("Date")
+    overlap = old.index.intersection(fresh.index)
+    for dt in overlap:
+        prev, new = float(old.loc[dt, "Close"]), float(fresh.loc[dt, "Close"])
+        if prev <= 0 or abs(new / prev - 1) > 0.01:
+            raise RuntimeError(
+                f"Historical close discrepancy {dt.date()}: stored={prev}, Yahoo={new}; "
+                "manual audit required; CSV unchanged."
+            )
+
     historical = existing[~existing["Date"].isin(confirmed["Date"])]
     merged = normalize_dataframe(pd.concat([historical, confirmed], ignore_index=True))
+    if merged["Date"].max().normalize() != expected_last:
+        raise RuntimeError("Merged file missing expected last session; CSV unchanged.")
     changed = not merged.equals(existing)
     if changed:
         import os
@@ -373,8 +394,9 @@ def update_soxl_data(file_path=DATA_FILE):
         "old_last_date": old_last.date(),
         "new_last_date": merged["Date"].max().date(),
         "expected_last_date": expected_last.date(),
-        "source": "NASDAQ_VERIFIED_AGAINST_YAHOO_RAW",
-        "message": "Verified data saved" if changed else "Verified data unchanged",
+        "source": "YAHOO_ADJUSTED_DOWNLOAD_HISTORY_CONSISTENCY",
+        "verification": "SAME_PROVIDER_NOT_INDEPENDENT",
+        "message": "Yahoo adjusted data saved" if changed else "Yahoo adjusted data unchanged",
     }
 
 
