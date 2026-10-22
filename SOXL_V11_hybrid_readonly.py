@@ -74,17 +74,20 @@ for k,v in q.items():
         n=int(v)
         if float(v)==n and n>=0:valid_q[k]=n
     except (TypeError,ValueError,OverflowError):pass
-held={k:v for k,v in valid_q.items() if v>0 and k not in set((saved or {}).get("excluded_positions",[]))}
+# Saved quantities are historical overrides, NOT a live holdings ledger.
+# Never infer active slots from these keys without strategy-engine reconciliation.
+held={}
+historical_qty={k:v for k,v in valid_q.items() if v>0 and k not in set((saved or {}).get("excluded_positions",[]))}
 manual=(saved or {}).get("manual_trades",[])
 overrides=(saved or {}).get("trade_overrides",{})
 flows=(saved or {}).get("cashflows",[])
 if saved is None:
     st.warning("저장 기록 미연결: 아래 수치는 0이 아니라 확인 불가로 표시합니다.")
 a,b,c,d=st.columns(4)
-a.metric("저장된 보유 슬롯",f"{len(held)}개" if saved is not None else "확인 불가",help="암호화 파일의 수량 기록 기준이며 실제 증권사 잔고가 아닙니다.")
-b.metric("저장된 보유 수량",f"{sum(held.values()):,}주" if saved is not None else "확인 불가")
-c.metric("수동 청산 기록",f"{len(manual) if isinstance(manual,list) else 0}건" if saved is not None else "확인 불가")
-d.metric("체결 수정 기록",f"{len(overrides) if isinstance(overrides,dict) else 0}건" if saved is not None else "확인 불가")
+a.metric("현재 보유 슬롯","미확인",help="전략 엔진의 미청산 슬롯과 증권사 잔고 대조 전에는 표시하지 않습니다.")
+b.metric("현재 보유 수량","미확인")
+c.metric("저장된 수동 청산 기록",f"{len(manual) if isinstance(manual,list) else 0}건" if saved is not None else "확인 불가")
+d.metric("저장된 체결 수정 기록",f"{len(overrides) if isinstance(overrides,dict) else 0}건" if saved is not None else "확인 불가")
 
 tabs=st.tabs(["운용 현황","거래 원장","슬롯 관리","자동매매 관리"])
 with tabs[0]:
@@ -93,7 +96,8 @@ with tabs[0]:
     if pd.Timestamp(last["Date"]).date()<expected:
         st.warning("위 차트는 지연된 로컬 CSV의 과거 데이터이며 최신 가격이 아닙니다.")
     st.subheader("보유 슬롯 요약")
-    st.dataframe(saved_table(held),use_container_width=True,hide_index=True)
+    st.info("현재 보유 슬롯은 전략 엔진의 미청산 상태와 실제 증권사 잔고 대조 전까지 표시하지 않습니다.")
+    st.caption(f"참고: 과거 수량 오버라이드 {len(historical_qty)}건은 현재 보유 수량이 아닙니다.")
     st.caption("예수금·총평가자산·실현손익은 계좌 조회 또는 체결원장 검증 전까지 표시하지 않습니다.")
 with tabs[1]:
     st.subheader("저장된 수동 청산 거래")
@@ -104,13 +108,14 @@ with tabs[1]:
     st.dataframe(saved_table(flows),use_container_width=True,hide_index=True)
     st.caption("서로 다른 저장 형식의 기록을 임의로 합치거나 실거래 체결로 확정하지 않습니다.")
 with tabs[2]:
-    st.subheader("저장된 슬롯 수량과 매수가")
+    st.subheader("과거 저장된 슬롯별 수량 기록 (현재 보유 아님)")
     entry=(saved or {}).get("entry_prices",{})
     entry=entry if isinstance(entry,dict) else {}
     rows=[{"슬롯 키":k,"저장 수량":v,"저장 매수가($)":entry.get(k),
-           "상태":"수량 저장됨 · 계좌 미대조"} for k,v in held.items()]
+           "상태":"과거 저장값 · 현재 보유 여부 미확인"} for k,v in historical_qty.items()]
     st.dataframe(pd.DataFrame(rows,columns=["슬롯 키","저장 수량","저장 매수가($)","상태"]),
                  use_container_width=True,hide_index=True)
+    st.warning("이 표는 과거 수량 기록을 포함하며, 현재 보유 슬롯 목록으로 사용하면 안 됩니다.")
     st.caption("D2/D3·TIME 및 목표가 신호는 전략 엔진과 슬롯 원장 대조 후 추가할 예정입니다.")
 with tabs[3]:
     st.subheader("자동매매 안전 상태")
