@@ -48,3 +48,48 @@ def reconstruct(prices, saved, transition_date="2026-10-19"):
             "모델 평가손익($)":round(actual_qty*(float(prices["Close"].iloc[-1])-price),2) if actual_qty is not None else None,
             "검증 상태":"저장 수량 있음 · 증권사 미대조" if actual_qty is not None else "수량 미확인 · 증권사 미대조"})
     return rows
+
+
+def audit_saved_vs_model(prices, saved):
+    """Diagnostic only: reconcile stored keys against reconstructed model keys."""
+    rows=reconstruct(prices,saved)
+    model={r["슬롯 ID"]:r for r in rows}
+    quantities=saved.get("quantities",{})
+    quantities=quantities if isinstance(quantities,dict) else {}
+    entries=saved.get("entry_prices",{})
+    entries=entries if isinstance(entries,dict) else {}
+    excluded=saved.get("excluded_positions",[])
+    excluded=set(excluded) if isinstance(excluded,list) else set()
+    records=[]
+    for key in sorted(set(model)|set(quantities)|set(entries)|excluded):
+        m=model.get(key)
+        raw=quantities.get(key)
+        valid=False
+        quantity=None
+        try:
+            if raw is not None:
+                f=float(raw)
+                if __import__("math").isfinite(f) and f.is_integer() and f>=0:
+                    quantity=int(f)
+                    valid=True
+        except (ValueError,TypeError,OverflowError):
+            pass
+        if key in excluded:
+            status="저장된 제외 기록 · 현재 보유 판단 불가"
+        elif m is None:
+            status="모델 미청산 목록에 없음 · 과거 기록 가능"
+        elif not valid:
+            status="모델 슬롯 존재 · 저장 수량 없음/오류"
+        elif quantity==0:
+            status="저장 수량 0 · 모델과 확인 필요"
+        else:
+            status="모델 슬롯·저장 수량 연결 · 증권사 미검증"
+        records.append({
+            "슬롯 ID":key,
+            "모델 미청산": "예" if m is not None else "아니오",
+            "저장 수량(주)":quantity,
+            "저장 매수가($)":entries.get(key),
+            "저장 제외": "예" if key in excluded else "아니오",
+            "진단":status,
+        })
+    return records
