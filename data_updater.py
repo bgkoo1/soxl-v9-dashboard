@@ -193,8 +193,8 @@ def download_nasdaq_recent(start_date, end_date):
     """Yahoo 계열이 모두 지연/차단될 때 신규 일봉을 보완하는 독립 소스."""
     params = {
         "assetclass": "etf",
-        "fromdate": start_date.strftime("%m/%d/%Y"),
         "limit": 100,
+        "offset": 0,
     }
     try:
         r = requests.get(NASDAQ_URL, params=params, headers=HEADERS, timeout=20)
@@ -203,6 +203,7 @@ def download_nasdaq_recent(start_date, end_date):
         data = payload.get("data") or {}
         table = data.get("tradesTable") or {}
         rows_raw = table.get("rows") or []
+        print(f"NASDAQ_DIAGNOSTIC http={r.status_code} status={payload.get('status')} message={payload.get('message')} data_keys={list(data) if isinstance(data, dict) else type(data).__name__} table_keys={list(table) if isinstance(table, dict) else type(table).__name__} raw_rows={len(rows_raw)}")
         rows = []
         for x in rows_raw:
             try:
@@ -221,9 +222,10 @@ def download_nasdaq_recent(start_date, end_date):
                 rows.append({"Date": dt.normalize(), "Open": o, "High": h, "Low": l, "Close": c, "Volume": v})
             except Exception:
                 continue
+        print(f"NASDAQ_DIAGNOSTIC parsed_rows={len(rows)} requested_start={start_date} requested_end={end_date}")
         return normalize_dataframe(pd.DataFrame(rows)) if rows else pd.DataFrame()
     except Exception as e:
-        print(f"Nasdaq API 실패: {e}")
+        print(f"Nasdaq API 실패: {type(e).__name__}: {e}")
         return pd.DataFrame()
 
 
