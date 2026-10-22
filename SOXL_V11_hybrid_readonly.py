@@ -55,10 +55,15 @@ def load_prices():
 saved,error=read_saved()
 prices=load_prices()
 last=prices.iloc[-1]
-if error:st.error(error)
-else:st.success("암호화된 기존 거래기록 읽기 성공 · 저장 파일은 수정하지 않습니다.")
-if pd.Timestamp(last["Date"]).date()<datetime.now(ZoneInfo("America/New_York")).date():
-    st.info("마지막 저장 일봉 날짜와 현재 뉴욕 날짜가 다릅니다. 최신 확정 거래일 여부는 별도 검증이 필요합니다.")
+if error:
+    st.error(error)
+    st.info("새 Streamlit 앱의 Settings → Secrets에 기존 앱의 GITHUB_TOKEN 및 PORTFOLIO_ENCRYPTION_KEY를 동일하게 등록하세요. 인증정보를 채팅에 보내지 마세요.")
+else:
+    st.success("암호화된 기존 거래기록 읽기 성공 · 저장 파일은 수정하지 않습니다.")
+from data_updater import get_expected_latest_trading_day
+expected=get_expected_latest_trading_day().date()
+if pd.Timestamp(last["Date"]).date()<expected:
+    st.error(f"가격 데이터 갱신 지연: 마지막 저장 {pd.Timestamp(last['Date']).date()} / 마지막 확정 예상 거래일 {expected}. 해당 데이터로 매매 판단 금지.")
 st.caption(f"SOXL 저장 일봉: {pd.Timestamp(last['Date']).date()} · 종가 ${float(last['Close']):,.4f} · 출처 검증 상태: 미확인")
 
 q=(saved or {}).get("quantities",{})
@@ -73,16 +78,20 @@ held={k:v for k,v in valid_q.items() if v>0 and k not in set((saved or {}).get("
 manual=(saved or {}).get("manual_trades",[])
 overrides=(saved or {}).get("trade_overrides",{})
 flows=(saved or {}).get("cashflows",[])
+if saved is None:
+    st.warning("저장 기록 미연결: 아래 수치는 0이 아니라 확인 불가로 표시합니다.")
 a,b,c,d=st.columns(4)
-a.metric("저장된 보유 슬롯",f"{len(held)}개",help="암호화 파일의 수량 기록 기준이며 실제 증권사 잔고가 아닙니다.")
-b.metric("저장된 보유 수량",f"{sum(held.values()):,}주")
-c.metric("수동 청산 기록",f"{len(manual) if isinstance(manual,list) else 0}건")
-d.metric("체결 수정 기록",f"{len(overrides) if isinstance(overrides,dict) else 0}건")
+a.metric("저장된 보유 슬롯",f"{len(held)}개" if saved is not None else "확인 불가",help="암호화 파일의 수량 기록 기준이며 실제 증권사 잔고가 아닙니다.")
+b.metric("저장된 보유 수량",f"{sum(held.values()):,}주" if saved is not None else "확인 불가")
+c.metric("수동 청산 기록",f"{len(manual) if isinstance(manual,list) else 0}건" if saved is not None else "확인 불가")
+d.metric("체결 수정 기록",f"{len(overrides) if isinstance(overrides,dict) else 0}건" if saved is not None else "확인 불가")
 
 tabs=st.tabs(["운용 현황","거래 원장","슬롯 관리","자동매매 관리"])
 with tabs[0]:
     st.subheader("가격 추이")
     st.line_chart(prices.tail(90).set_index("Date")["Close"],height=270)
+    if pd.Timestamp(last["Date"]).date()<expected:
+        st.warning("위 차트는 지연된 로컬 CSV의 과거 데이터이며 최신 가격이 아닙니다.")
     st.subheader("보유 슬롯 요약")
     st.dataframe(saved_table(held),use_container_width=True,hide_index=True)
     st.caption("예수금·총평가자산·실현손익은 계좌 조회 또는 체결원장 검증 전까지 표시하지 않습니다.")
