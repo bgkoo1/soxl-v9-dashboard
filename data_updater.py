@@ -320,6 +320,8 @@ def update_soxl_data(file_path=DATA_FILE):
 
     nasdaq = download_nasdaq_recent(start_date, end_date)
     if yahoo.empty or nasdaq.empty:
+        print(f"VERIFY_DIAGNOSTIC yahoo_rows={len(yahoo)} nasdaq_rows={len(nasdaq)} expected={expected_last.date()}")
+        print(f"VERIFY_DIAGNOSTIC yahoo_last={yahoo['Date'].max() if not yahoo.empty else 'NONE'} nasdaq_last={nasdaq['Date'].max() if not nasdaq.empty else 'NONE'}")
         raise RuntimeError("Independent Yahoo/Nasdaq verification unavailable; CSV unchanged.")
     y = yahoo.set_index("Date")
     n = nasdaq.set_index("Date")
