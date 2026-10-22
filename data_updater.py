@@ -362,17 +362,35 @@ def update_soxl_data(file_path=DATA_FILE):
         if pd.isna(row["Volume"]) or float(row["Volume"]) < 0:
             raise RuntimeError(f"Invalid volume {row['Date']}; CSV unchanged.")
 
-    # Do not silently rewrite historical bars with unexpectedly large revisions.
+    # Recent source contamination can require correction. Permit bounded revisions
+    # ONLY when Yahoo download and history agree, with a visible audit trail.
+    # Changes outside the rolling window remain untouched.
     old = existing.set_index("Date")
     fresh = confirmed.set_index("Date")
     overlap = old.index.intersection(fresh.index)
+    revisions = []
     for dt in overlap:
         prev, new = float(old.loc[dt, "Close"]), float(fresh.loc[dt, "Close"])
-        if prev <= 0 or abs(new / prev - 1) > 0.01:
+        if prev <= 0:
+            raise RuntimeError(f"Invalid stored close {dt.date()}; CSV unchanged.")
+        relative_change = abs(new / prev - 1)
+        if relative_change > 0.15:
             raise RuntimeError(
-                f"Historical close discrepancy {dt.date()}: stored={prev}, Yahoo={new}; "
-                "manual audit required; CSV unchanged."
+                f"Extreme historical discrepancy {dt.date()}: stored={prev}, "
+                f"Yahoo={new}, change={relative_change:.2%}; CSV unchanged."
             )
+        if relative_change > 0.01:
+            revisions.append((dt.date(), prev, new, relative_change))
+    for day, prev, new, delta in revisions:
+        print(
+            f"YAHOO_REVISION_AUDIT date={day} stored={prev:.6f} "
+            f"yahoo_adjusted={new:.6f} change={delta:.2%} "
+            "download_history_consistent=True",
+            flush=True,
+        )
+    if revisions:
+        print(f"YAHOO_REVISION_AUDIT total={len(revisions)} recent-window corrections; "
+              "Yahoo same-provider consistency, not independent verification.", flush=True)
 
     historical = existing[~existing["Date"].isin(confirmed["Date"])]
     merged = normalize_dataframe(pd.concat([historical, confirmed], ignore_index=True))
@@ -391,6 +409,7 @@ def update_soxl_data(file_path=DATA_FILE):
         "updated": changed,
         "rows_added": int((confirmed["Date"] > old_last).sum()),
         "rows_refreshed": int((confirmed["Date"] <= old_last).sum()),
+        "audited_close_revisions": len(revisions),
         "old_last_date": old_last.date(),
         "new_last_date": merged["Date"].max().date(),
         "expected_last_date": expected_last.date(),
