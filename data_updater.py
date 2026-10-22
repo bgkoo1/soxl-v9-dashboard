@@ -193,6 +193,8 @@ def download_nasdaq_recent(start_date, end_date):
     """Yahoo 계열이 모두 지연/차단될 때 신규 일봉을 보완하는 독립 소스."""
     params = {
         "assetclass": "etf",
+        "fromdate": start_date.strftime("%m/%d/%Y"),
+        "todate": (end_date - timedelta(days=1)).strftime("%m/%d/%Y"),
         "limit": 100,
         "offset": 0,
     }
@@ -200,6 +202,9 @@ def download_nasdaq_recent(start_date, end_date):
         r = requests.get(NASDAQ_URL, params=params, headers=HEADERS, timeout=20)
         r.raise_for_status()
         payload = r.json()
+        api_status = payload.get("status") or {}
+        if isinstance(api_status, dict) and api_status.get("rCode") not in (None, 200):
+            raise RuntimeError(f"Nasdaq API status: {api_status}")
         data = payload.get("data") or {}
         table = data.get("tradesTable") or {}
         rows_raw = table.get("rows") or []
