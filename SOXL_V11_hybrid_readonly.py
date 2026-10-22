@@ -165,6 +165,15 @@ with tabs[1]:
         st.download_button("현재 검색 결과 CSV 내려받기",ledger.to_csv(index=False).encode("utf-8-sig"),
                            file_name=f"SOXL_V11_{source}_readonly.csv",mime="text/csv")
 with tabs[2]:
+    st.subheader("V11 모델 슬롯 진단 · 실계좌 미검증")
+    if saved is not None:
+        try:
+            from v11_hybrid_model_slots import reconstruct
+            model_rows = reconstruct(prices, saved)
+            st.dataframe(pd.DataFrame(model_rows), use_container_width=True, hide_index=True)
+            st.caption("모델 미청산 슬롯은 실제 증권사 보유와 다를 수 있습니다.")
+        except Exception as exc:
+            st.warning(f"모델 재구성 보류: {type(exc).__name__}: {exc}")
     st.subheader("슬롯별 과거 저장 기록")
     st.warning("현재 보유 여부는 아직 확인되지 않았습니다. 아래는 저장된 과거 수량 기록이며 실계좌 보유 목록이 아닙니다.")
     entry=(saved or {}).get("entry_prices",{})
