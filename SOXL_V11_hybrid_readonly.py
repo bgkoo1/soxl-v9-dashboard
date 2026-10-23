@@ -126,18 +126,18 @@ b.metric("현재 보유 수량","미확인")
 c.metric("저장된 수동 청산 기록",f"{len(manual) if isinstance(manual,list) else 0}건" if saved is not None else "확인 불가")
 d.metric("저장된 체결 수정 기록",f"{len(overrides) if isinstance(overrides,dict) else 0}건" if saved is not None else "확인 불가")
 
-tabs=st.tabs(["운용 현황","거래 원장","슬롯 관리","자동매매 관리"])
+tabs=st.tabs(["운용 준비","과거 기록 보관함","신규 슬롯","시작 조건"])
 with tabs[0]:
-    st.subheader("가격 추이")
+    st.subheader("SOXL 가격 추이 · 신규 운용 시작 전 참고용")
     st.line_chart(prices.tail(90).set_index("Date")["Close"],height=270)
     if pd.Timestamp(last["Date"]).date()<expected:
         st.warning("위 차트는 GitHub에 저장된 지연된 데이터이며 최신 가격이 아닙니다.")
-    st.subheader("보유 슬롯 요약")
-    st.info("현재 보유 슬롯은 전략 엔진의 미청산 상태와 실제 증권사 잔고 대조 전까지 표시하지 않습니다.")
+    st.subheader("신규 운용 현황")
+    st.info("신규 V11 운용은 아직 시작하지 않았습니다. 초기 현금과 신규 슬롯은 실계좌 조회·승인 후 설정합니다.")
     st.caption(f"참고: 과거 수량 오버라이드 {len(historical_qty)}건은 현재 보유 수량이 아닙니다.")
     st.caption("예수금·총평가자산·실현손익은 계좌 조회 또는 체결원장 검증 전까지 표시하지 않습니다.")
 with tabs[1]:
-    st.subheader("거래 원장 · 저장 기록 조회")
+    st.subheader("과거 거래기록 보관함 · 신규 운용 원장 아님")
     st.caption("암호화 파일에 저장된 사용자 기록만 표시합니다. 백테스트 가상 체결과 증권사 실제 체결을 혼합하지 않습니다.")
     source=st.radio("기록 유형",["수동 청산","체결가 수정","입출금"],horizontal=True)
     datasets={"수동 청산":manual,"체결가 수정":overrides,"입출금":flows}
