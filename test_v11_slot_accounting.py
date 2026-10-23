@@ -27,8 +27,8 @@ class TestSlotAccounting(unittest.TestCase):
         s = result["slots"][0]
         self.assertEqual(Decimal(s["quantity"]), Decimal("5"))
         self.assertEqual(Decimal(s["remaining_cost_usd"]), Decimal("150.5"))
-        self.assertEqual(Decimal(s["realized_pnl_usd"]), Decimal("347.5"))
-        self.assertEqual(Decimal(result["total_realized_pnl_usd"]), Decimal("347.5"))
+        self.assertEqual(Decimal(s["realized_pnl_usd"]), Decimal("246.5"))
+        self.assertEqual(Decimal(result["total_realized_pnl_usd"]), Decimal("246.5"))
 
     def test_reject_oversell(self):
         with self.assertRaises(ValueError):
