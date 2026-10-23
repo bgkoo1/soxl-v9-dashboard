@@ -185,6 +185,18 @@ with tabs[3]:
         else:
             st.warning(auth["message"])
         st.caption("접근 토큰은 저장하거나 화면에 출력하지 않습니다. 인증 성공은 잔고 조회 성공이나 현금 100% 확인을 의미하지 않습니다.")
+    st.divider()
+    st.subheader("메리츠 계좌 조회 연결 테스트 · 읽기 전용")
+    st.caption("공식 조회 API 5개를 GET으로 호출해 연결 여부만 표시합니다. 계좌 금액·보유 수량·응답 원문은 출력하거나 저장하지 않습니다.")
+    if st.button("계좌 조회 API 연결 확인",type="secondary"):
+        from v11_meritz_account_probe import probe_accounts
+        try:
+            with st.spinner("메리츠 계좌 조회 API 확인 중"):
+                results=probe_accounts(st.secrets)
+            st.dataframe(pd.DataFrame(results),use_container_width=True,hide_index=True)
+            st.info("응답 수신은 계좌 잔고 0 또는 현금 100%를 의미하지 않습니다. 해외 보유·외화 및 미체결 주문의 완전한 검증이 추가로 필요합니다.")
+        except ValueError as exc:
+            st.warning(str(exc))
     st.write("실계좌 보유 수량: **미조회**")
     st.write("미체결·취소대기 주문: **미조회**")
     st.write("운용 가능 현금: **미조회**")
