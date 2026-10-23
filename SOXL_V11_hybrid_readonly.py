@@ -18,7 +18,7 @@ div[data-testid="stMetric"]{border:1px solid #e2e8f0;border-radius:12px;padding:
 div[data-testid="stDataFrame"]{border:1px solid #e2e8f0;border-radius:9px}
 h1,h2,h3{letter-spacing:-.035em}
 </style>""",unsafe_allow_html=True)
-st.title("SOXL V11  ·  운용 워크스페이스")
+st.title("SOXL V11  ·  신규 운용 준비")
 st.caption("읽기 전용 · 기존 실전 기록 보존 · 실제 증권사 주문 및 잔고 연동 없음")
 
 def read_saved():
@@ -165,59 +165,25 @@ with tabs[1]:
         st.download_button("현재 검색 결과 CSV 내려받기",ledger.to_csv(index=False).encode("utf-8-sig"),
                            file_name=f"SOXL_V11_{source}_readonly.csv",mime="text/csv")
 with tabs[2]:
-    st.subheader("V11 모델 슬롯 진단 · 실계좌 미검증")
-    if saved is not None:
-        try:
-            from v11_hybrid_model_slots import reconstruct
-            model_rows = reconstruct(prices, saved)
-            st.dataframe(pd.DataFrame(model_rows), use_container_width=True, hide_index=True)
-            st.caption("모델 미청산 슬롯은 실제 증권사 보유와 다를 수 있습니다.")
-        except Exception as exc:
-            st.warning(f"모델 재구성 보류: {type(exc).__name__}: {exc}")
-    st.subheader("모델 슬롯 ↔ 저장 기록 대조")
-    st.caption("진단 결과는 실계좌 확인이 아닌 저장 데이터 정합성 검사입니다.")
-    if saved is not None:
-        try:
-            from v11_hybrid_model_slots import audit_saved_vs_model
-            audit_rows=audit_saved_vs_model(prices,saved)
-            audit_df=pd.DataFrame(audit_rows)
-            if not audit_df.empty:
-                st.dataframe(audit_df,use_container_width=True,hide_index=True,height=350)
-                st.download_button("슬롯 대조표 CSV 다운로드",
-                    audit_df.to_csv(index=False).encode("utf-8-sig"),
-                    file_name="SOXL_V11_slot_reconciliation_readonly.csv",mime="text/csv")
-                st.caption("모델과 저장값이 연결되더라도 실제 잔고로 확정하지 않습니다.")
-            else:
-                st.info("대조할 저장 기록이 없습니다.")
-        except Exception as exc:
-            st.warning(f"슬롯 대조 보류: {type(exc).__name__}: {exc}")
-    st.divider()
-    st.subheader("슬롯별 과거 저장 기록")
-    st.warning("현재 보유 여부는 아직 확인되지 않았습니다. 아래는 저장된 과거 수량 기록이며 실계좌 보유 목록이 아닙니다.")
-    entry=(saved or {}).get("entry_prices",{})
-    entry=entry if isinstance(entry,dict) else {}
-    excluded=(saved or {}).get("excluded_positions",[])
-    excluded=set(excluded) if isinstance(excluded,list) else set()
-    keys=sorted(set(valid_q)|set(entry))
-    rows=[{
-        "슬롯 키":key,
-        "저장 수량(주)":valid_q.get(key),
-        "저장 매수가($)":entry.get(key),
-        "제외 기록":"있음" if key in excluded else "없음",
-        "현재 보유 여부":"미검증",
-    } for key in keys]
-    history=pd.DataFrame(rows,columns=["슬롯 키","저장 수량(주)","저장 매수가($)","제외 기록","현재 보유 여부"])
-    term=st.text_input("슬롯 키 검색",key="slot_search")
-    if term.strip():
-        history=history[history["슬롯 키"].astype(str).str.contains(term.strip(),case=False,regex=False)]
-    st.caption(f"표시 {len(history):,}건 · 저장 키 전체 {len(keys):,}건")
-    st.dataframe(history,use_container_width=True,hide_index=True,height=420)
-    st.caption("현재 슬롯(최대 7개), D2/D3 및 TIME 상태는 V11 엔진 재구성과 실제 체결·잔고 대조를 마친 후 표시합니다.")
+    st.subheader("신규 V11 슬롯")
+    st.info("현금 100% 확인 후 새 운용을 시작합니다. 신규 운용 시작 전에는 슬롯 0개로 초기화할 예정이며, 현재 실계좌 보유 수량을 0으로 단정하지 않습니다.")
+    st.caption("기존 V10/V11 모델 슬롯 재구성 및 과거 저장 수량 대조는 신규 운용에서 사용하지 않습니다.")
+    st.caption("시작 후 신규 주문 체결을 기준으로 최대 7개 슬롯을 기록합니다.")
 with tabs[3]:
-    st.subheader("자동매매 안전 상태")
-    st.warning("실거래 비활성화 · 기존 슬롯 정리 및 계좌 대조 전까지 자동주문 금지")
-    st.write("메리츠 계좌 인증: **미검증**")
-    st.write("실계좌 잔고 및 미체결 주문: **미조회**")
-    st.write("SOXL 확정 종가 교차검증: **별도 확인 필요**")
-    st.write("자동 주문 전송: **미구현 / 비활성화**")
-    st.caption("이 앱에는 주문 API 호출, 주문 버튼, 저장 파일 수정 기능이 없습니다.")
+    st.subheader("신규 V11 시작 준비 · 자동주문 비활성화")
+    from v11_fresh_start_gate import evaluate_fresh_start
+    from v11_meritz_readonly_adapter import get_readonly_connection_status
+    broker_status=get_readonly_connection_status(st.secrets)
+    st.write(f"메리츠 인증 상태: **{broker_status['status']}**")
+    st.caption(broker_status["message"])
+    st.write("실계좌 보유 수량: **미조회**")
+    st.write("미체결·취소대기 주문: **미조회**")
+    st.write("운용 가능 현금: **미조회**")
+    st.write("신규 포트폴리오 시작일: **미확정**")
+    st.write("모의 운용 검증: **미완료**")
+    st.write("실거래 승인: **없음**")
+    readiness=evaluate_fresh_start({})
+    st.warning("실거래 주문 비활성화 · 아래 조건을 모두 충족한 후 별도 승인 필요")
+    for reason in readiness["blocking_reasons"]:
+        st.write("• "+reason)
+    st.caption("시작 이후의 신규 체결만 별도 원장에 기록할 예정입니다. 기존 live_portfolio.enc 파일은 읽기 전용으로 보존합니다.")
