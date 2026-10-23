@@ -45,12 +45,16 @@ def probe_accounts(secrets, *, session=None):
             if not isinstance(body,dict):
                 raise ValueError("응답 형식 오류")
             data=body.get("data")
-            if response.ok and data is not None:
+            code=str(body.get("rsp_cd","")).strip()
+            if response.ok and code in ("5766","0000","0001","5620") and data is not None:
                 kind="목록" if isinstance(data,list) else ("객체" if isinstance(data,dict) else "기타")
-                status="응답 수신 · 내용 검증 전"
+                status="업무 성공 · 수치 검증 전"
+            elif response.ok and code in ("5820","5822") and data in ([],{},None):
+                kind="빈 자료"
+                status="조회 결과 없음 · 잔고 0 확정 불가"
             else:
                 kind="미확인"
-                status="조회 실패 또는 자료 없음"
+                status="업무 오류 또는 응답 미검증"
             results.append({"조회":name,"결과":status,"자료 구조":kind})
         except (requests.RequestException,ValueError,TypeError):
             results.append({"조회":name,"결과":"응답 확인 실패","자료 구조":"미확인"})
