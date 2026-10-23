@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "strategy": "SOXL_V11",
+  "mode": "READ_ONLY",
+  "demo": true,
+  "live_orders_enabled": false,
+  "calculation_method": "FIFO",
+  "currency": "USD",
+  "verified_fills_only": false,
+  "slots": [
+    {
+      "slot_id": 1,
+      "quantity": "5",
+      "remaining_cost_usd": "150.5",
+      "average_cost_usd": "30.1",
+      "realized_pnl_usd": "246.5",
+      "buy_quantity": "20",
+      "sell_quantity": "15",
+      "buy_fees_usd": "2",
+      "sell_fees_usd": "2"
+    },
+    {
+      "slot_id": 2,
+      "quantity": "3",
+      "remaining_cost_usd": "90",
+      "average_cost_usd": "30",
+      "realized_pnl_usd": "0",
+      "buy_quantity": "3",
+      "sell_quantity": "0",
+      "buy_fees_usd": "0",
+      "sell_fees_usd": "0"
+    }
+  ],
+  "total_realized_pnl_usd": "246.5",
+  "events": [
+    {
+      "occurred_at": "2026-10-24T10:00:00+09:00",
+      "slot_id": 1,
+      "event_type": "BUY_FILLED",
+      "order_type": "LOC",
+      "side": "BUY",
+      "quantity": "10",
+      "price": "20",
+      "order_state": "FILLED"
+    },
+    {
+      "occurred_at": "2026-10-24T10:01:00+09:00",
+      "slot_id": 1,
+      "event_type": "BUY_FILLED",
+      "order_type": "LOC",
+      "side": "BUY",
+      "quantity": "10",
+      "price": "30",
+      "order_state": "FILLED"
+    },
+    {
+      "occurred_at": "2026-10-24T10:02:00+09:00",
+      "slot_id": 1,
+      "event_type": "SELL_FILLED",
+      "order_type": "MOC",
+      "side": "SELL",
+      "quantity": "15",
+      "price": "40",
+      "order_state": "FILLED"
+    },
+    {
+      "occurred_at": "2026-10-24T10:03:00+09:00",
+      "slot_id": 2,
+      "event_type": "BUY_FILLED",
+      "order_type": "LOC",
+      "side": "BUY",
+      "quantity": "3",
+      "price": "30",
+      "order_state": "FILLED"
+    }
+  ],
+  "note": "오프라인 UI 테스트용 가상 계산 결과. 실제 계좌 데이터가 아니며 MDD/수익률은 산출하지 않음."
+}
