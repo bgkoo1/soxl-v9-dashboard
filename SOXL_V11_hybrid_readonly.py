@@ -217,6 +217,21 @@ with tabs[3]:
             st.warning("국내 보유·미체결 주문·미국주식 주문 가능 금액은 아직 대조하지 않았습니다. 현금 100% 확정 및 실거래 활성화 불가.")
         except ValueError as exc:
             st.warning(str(exc))
+    st.divider()
+    st.subheader("해외 미체결·예약주문 조회 · 읽기 전용")
+    if st.button("해외 미체결 주문 조회",type="secondary"):
+        from v11_meritz_orders_preview import preview_overseas_orders
+        try:
+            with st.spinner("메리츠 해외 주문 조회 중"):
+                order_preview=preview_overseas_orders(st.secrets)
+            st.write(f"당일 미체결 {order_preview['today_count']}건 · 예약주문 {order_preview['reserved_count']}건")
+            if order_preview["orders"]:
+                st.dataframe(pd.DataFrame(order_preview["orders"]),use_container_width=True,hide_index=True)
+            else:
+                st.info("조회 범위 내 해외 미체결·예약주문이 없습니다.")
+            st.warning(order_preview["note"])
+        except ValueError as exc:
+            st.warning(str(exc))
     st.write("실계좌 보유 수량: **미조회**")
     st.write("미체결·취소대기 주문: **미조회**")
     st.write("운용 가능 현금: **미조회**")
