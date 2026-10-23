@@ -15,17 +15,30 @@
 (function(){
 const ids=["totalAssets","cash","realized","slotCount","equityChart","slotRows","orderRows","performanceContent"];
 const original=Object.fromEntries(ids.map(id=>[id,document.getElementById(id).innerHTML]));
-const example={
-totalAssets:"$12,845.60",cash:"$6,920.10",realized:"+ $324.50",slotCount:"2 / 7",
-equityChart:'<svg role="img" aria-label="가상 자산 추이" viewBox="0 0 500 170" width="100%"><path d="M10 155L90 140L170 150L250 98L330 115L410 70L490 22" fill="none" stroke="#3469d8" stroke-width="4"/></svg>',
-slotRows:'<tr><td>01</td><td>보유</td><td>예시 D-3</td><td>35</td><td>$41.20</td><td class="positive">+$84.00</td></tr><tr><td>02</td><td>보유</td><td>예시 D-1</td><td>40</td><td>$43.50</td><td class="negative">-$32.00</td></tr>',
-orderRows:'<tr><td>예시 10:00</td><td>02</td><td>LOC</td><td>매수</td><td>40</td><td>$43.50</td><td>체결</td></tr><tr><td>예시 09:30</td><td>01</td><td>MOC</td><td>매도</td><td>20</td><td>$44.80</td><td>체결</td></tr>',
-performanceContent:'<div style="width:100%;max-width:550px"><div class="line"><span>예시 누적 수익률</span><b class="positive">+2.59%</b></div><div class="line"><span>예시 MDD</span><b class="negative">-8.40%</b></div><div class="line"><span>예시 거래 건수</span><b>12건</b></div><small>모든 수치는 임의 예시이며 백테스트 결과가 아닙니다.</small></div>'
-};
-let on=false;document.getElementById("demoToggle").addEventListener("click",function(){
-on=!on;for(const id of ids)document.getElementById(id).innerHTML=(on?example:original)[id];
-this.textContent=on?"예시 데이터 숨기기":"예시 데이터 보기";
-document.getElementById("demoStatus").textContent=on?"가상 데이터 · 실제 거래 아님":"실제 계좌 미연결";
+const money = n => "$"+Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+function renderSnapshot(data){
+ if(data.demo!==true || data.strategy!=="SOXL_V11" || data.mode!=="READ_ONLY" || data.live_orders_enabled!==false || data.calculation_method!=="FIFO" || !Array.isArray(data.slots) || !Array.isArray(data.events))throw Error("Invalid demo data");
+ const active=data.slots.filter(s=>Number(s.quantity)>0);
+ const rows=data.slots.filter(s=>Number(s.quantity)>0||Number(s.realized_pnl_usd)!==0);
+ const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+ const slots=rows.map(s=>"<tr><td>"+String(s.slot_id).padStart(2,"0")+"</td><td>"+(Number(s.quantity)>0?"보유":"청산")+"</td><td>가상 예시</td><td>"+esc(s.quantity)+"</td><td>"+(s.average_cost_usd===null?"—":money(s.average_cost_usd))+"</td><td>평가손익 미산출</td></tr>").join("");
+ const events=data.events.slice().reverse().map(e=>"<tr><td>"+esc(e.occurred_at.slice(0,16).replace("T"," "))+"</td><td>"+esc(e.slot_id)+"</td><td>"+esc(e.order_type)+"</td><td>"+(e.side==="BUY"?"매수":"매도")+"</td><td>"+esc(e.quantity)+"</td><td>"+money(e.price)+"</td><td>가상 체결</td></tr>").join("");
+ return {totalAssets:"—",cash:"—",realized:money(data.total_realized_pnl_usd)+" (예시)",slotCount:active.length+" / 7",
+ equityChart:"자산 추이: 실제 시계열 데이터가 없어 산출하지 않습니다.",
+ slotRows:slots||'<tr><td colspan="6">가상 슬롯 없음</td></tr>',
+ orderRows:events||'<tr><td colspan="7">가상 주문 없음</td></tr>',
+ performanceContent:'<div style="width:100%;max-width:550px"><div class="line"><span>가상 체결 기준 실현손익 (USD)</span><b class="positive">'+money(data.total_realized_pnl_usd)+'</b></div><div class="line"><span>보유 슬롯</span><b>'+active.length+' / 7</b></div><div class="line"><span>누적 수익률 / MDD</span><b>미산출</b></div><small>가상 데이터 · FIFO 원가 계산 예시 · 실거래 및 백테스트 결과 아님</small></div>'};
+}
+let on=false;document.getElementById("demoToggle").addEventListener("click",async function(){
+const button=this;button.disabled=true;
+try{
+let view=original;
+if(!on){const response=await fetch("./v11_demo_accounting.json",{cache:"no-store"});if(!response.ok)throw Error("sample unavailable");view=renderSnapshot(await response.json());}
+for(const id of ids)document.getElementById(id).innerHTML=view[id];
+on=!on;button.textContent=on?"예시 데이터 숨기기":"예시 데이터 보기";
+document.getElementById("demoStatus").textContent=on?"가상 FIFO 계산 예시 · 실제 거래 아님":"실제 계좌 미연결";
+}catch(e){document.getElementById("demoStatus").textContent="가상 데이터 로딩 실패 · 새로고침 후 재시도";}
+finally{button.disabled=false;}
 });
 })();
 </script></body></html>
