@@ -197,6 +197,26 @@ with tabs[3]:
             st.info("응답 수신은 계좌 잔고 0 또는 현금 100%를 의미하지 않습니다. 해외 보유·외화 및 미체결 주문의 완전한 검증이 추가로 필요합니다.")
         except ValueError as exc:
             st.warning(str(exc))
+    st.divider()
+    st.subheader("실제 계좌 잔고 미리보기 · 조회 전용")
+    st.caption("버튼을 누르면 원화 주문 가능 현금, USD 외화 예수금, SOXL 보유 수량을 조회합니다. 신규 원장에 저장하거나 자동주문에 사용하지 않습니다.")
+    if st.button("실제 잔고 조회",type="secondary"):
+        from v11_meritz_account_preview import preview_account
+        try:
+            with st.spinner("실계좌 잔고 조회 중"):
+                preview=preview_account(st.secrets)
+            c1,c2,c3=st.columns(3)
+            c1.metric("원화 주문 가능 현금(원)",preview["원화 주문 가능 현금(원)"])
+            c2.metric("USD 외화 예수금($)",preview["USD 외화 예수금($)"])
+            c3.metric("SOXL 보유 수량(주)",preview["SOXL 보유 수량(주)"])
+            st.write("해외 보유 종목")
+            if preview["해외 보유 종목"]:
+                st.dataframe(pd.DataFrame(preview["해외 보유 종목"]),use_container_width=True,hide_index=True)
+            else:
+                st.info("해외 보유 수량이 조회되지 않았습니다.")
+            st.warning("국내 보유·미체결 주문·미국주식 주문 가능 금액은 아직 대조하지 않았습니다. 현금 100% 확정 및 실거래 활성화 불가.")
+        except ValueError as exc:
+            st.warning(str(exc))
     st.write("실계좌 보유 수량: **미조회**")
     st.write("미체결·취소대기 주문: **미조회**")
     st.write("운용 가능 현금: **미조회**")
