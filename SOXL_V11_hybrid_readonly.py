@@ -176,6 +176,15 @@ with tabs[3]:
     broker_status=get_readonly_connection_status(st.secrets)
     st.write(f"메리츠 인증 상태: **{broker_status['status']}**")
     st.caption(broker_status["message"])
+    if st.button("메리츠 API 인증 연결 확인",type="secondary"):
+        from v11_meritz_auth_probe import probe_auth
+        with st.spinner("메리츠 인증 서버 확인 중"):
+            auth=probe_auth(st.secrets)
+        if auth["connected"]:
+            st.success(auth["message"])
+        else:
+            st.warning(auth["message"])
+        st.caption("접근 토큰은 저장하거나 화면에 출력하지 않습니다. 인증 성공은 잔고 조회 성공이나 현금 100% 확인을 의미하지 않습니다.")
     st.write("실계좌 보유 수량: **미조회**")
     st.write("미체결·취소대기 주문: **미조회**")
     st.write("운용 가능 현금: **미조회**")
