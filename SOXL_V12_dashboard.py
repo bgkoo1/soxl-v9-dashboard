@@ -7,6 +7,9 @@ import streamlit as st
 from SOXL_V12_backtest import run_v12_backtest
 from v12_manual_holdings import load_ledger, save_ledger, reopen_slot, close_manual_slot, reconcile_total, LedgerError
 from decimal import Decimal
+from datetime import datetime, timezone
+import requests
+from v12_portfolio_reconciliation import reconcile_portfolio
 from v11_meritz_readonly_adapter import get_readonly_connection_status
 
 NAME = "SOXL V12 Final · 6분할"
@@ -34,6 +37,29 @@ def _read_prices():
 def _run_research(data, capital):
     # Historical whole-series model. Does not inherit legacy V10/V11 slots.
     return run_v12_backtest(raw_df=data, initial_capital=capital)
+
+@st.cache_data(ttl=120,show_spinner=False)
+def _market_reference(ticker):
+    """Reference quote with source timestamp; never treated as a guaranteed fill."""
+    url=f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+    response=requests.get(url,params={"range":"5d","interval":"1d"},
+             headers={"User-Agent":"Mozilla/5.0 (SOXL V12 readonly)"},
+             timeout=12)
+    response.raise_for_status()
+    item=(response.json().get("chart") or {}).get("result") or []
+    if not item:
+        raise ValueError("Yahoo 시세 결과 없음")
+    meta=item[0].get("meta") or {}
+    rate=meta.get("regularMarketPrice")
+    stamp=meta.get("regularMarketTime")
+    rate=float(rate)
+    if not np.isfinite(rate) or rate<=0 or not isinstance(stamp,(int,float)):
+        raise ValueError("Yahoo 시세/시각 검증 실패")
+    age=(datetime.now(timezone.utc)-datetime.fromtimestamp(stamp,timezone.utc)).total_seconds()
+    # 4 calendar days allows ordinary US three-day holiday weekends but no older data.
+    return {"price":rate,"stamp":datetime.fromtimestamp(stamp,timezone.utc).isoformat(),
+            "fresh":0 <= age <= 4*86400,"source":"Yahoo Finance (참고 시세)"}
+
 
 def render_v12_dashboard():
     st.markdown("""
@@ -240,25 +266,112 @@ def render_v12_dashboard():
             st.dataframe(trades.tail(40).iloc[::-1],use_container_width=True,hide_index=True)
     if show_broker:
         st.divider()
-        st.subheader("메리츠 실계좌 · 조회 전용")
+        st.subheader("메리츠 실계좌 · 복구 슬롯 통합 조회")
+        st.caption("실제 잔고를 최신으로 조회해 복구된 슬롯과 수량을 대조합니다. 계좌 NAV는 SOXL 참고시세와 USD/KRW 참고환율로 계산한 추정값입니다.")
+
         status=get_readonly_connection_status(st.secrets)
         st.caption(status["message"])
         if st.button("메리츠 잔고 새로 조회 (READ ONLY)",key="v12_broker_refresh"):
             from v11_meritz_account_preview import preview_account
+            from v11_meritz_orders_preview import preview_overseas_orders
+            # Never keep credentials; only a user-triggered limited read-only snapshot.
             try:
                 snapshot=preview_account(st.secrets)
+                st.session_state["v12_recent_broker_snapshot"]=snapshot
+                st.session_state["v12_recent_broker_read_at"]=datetime.now(timezone.utc).isoformat()
+                try:
+                    order_snapshot=preview_overseas_orders(st.secrets)
+                    st.session_state["v12_recent_order_snapshot"]=order_snapshot
+                except Exception:
+                    st.session_state["v12_recent_order_snapshot"]=None
+                    st.warning("해외 미체결·예약주문 조회 실패: 신규 매수 참고값은 차단합니다.")
+                try:
+                    st.session_state["v12_recent_soxl_quote"]=_market_reference("SOXL")
+                except Exception:
+                    st.session_state["v12_recent_soxl_quote"]=None
+                    st.warning("SOXL 시장시세 검증 실패: 추정 NAV·매수 참고값은 표시하지 않습니다.")
+                try:
+                    st.session_state["v12_recent_fx_quote"]=_market_reference("KRW=X")
+                except Exception:
+                    st.session_state["v12_recent_fx_quote"]=None
+                    st.warning("USD/KRW 환율 조회 실패: 추정 NAV·매수 참고값은 표시하지 않습니다.")
+            except Exception:
+                st.session_state.pop("v12_recent_broker_snapshot",None)
+                st.session_state.pop("v12_recent_broker_read_at",None)
+                st.error("메리츠 계좌 조회 실패: 보유수량·NAV 참고값을 갱신하지 않았습니다.")
+        snapshot=st.session_state.get("v12_recent_broker_snapshot")
+        if snapshot is not None:
+            try:
                 b1,b2,b3=st.columns(3)
                 b1.metric("SOXL 실제 보유수량",snapshot["SOXL 보유 수량(주)"]+"주")
                 b2.metric("USD 예수금",snapshot["USD 외화 예수금($)"]+" USD")
                 b3.metric("원화 주문가능현금",snapshot["원화 주문 가능 현금(원)"]+"원")
                 st.caption(snapshot["status"])
-                if not ledger_error:
-                    comparison=reconcile_total(manual_positions,snapshot["SOXL 보유 수량(주)"])
-                    if comparison["matched"]:
-                        st.success("복구 원장의 SOXL 보유 수량과 증권사 잔고 수량이 일치합니다. 개별 매수 이력은 별도 확인이 필요합니다.")
+                time_read=st.session_state.get("v12_recent_broker_read_at")
+                read_dt=datetime.fromisoformat(time_read) if time_read else None
+                broker_fresh=bool(read_dt and
+                    0<=(datetime.now(timezone.utc)-read_dt).total_seconds()<=300)
+                quote=st.session_state.get("v12_recent_soxl_quote")
+                fx_quote=st.session_state.get("v12_recent_fx_quote")
+                pending_orders=st.session_state.get("v12_recent_order_snapshot")
+                scoped_empty=bool(pending_orders is not None and not pending_orders.get("orders"))
+                if ledger_error:
+                    st.error("복구 원장에 접근할 수 없어 실제 슬롯 수를 확인할 수 없습니다. 매수 참고값을 차단합니다.")
+                else:
+                    latest_closes=data["Close"].astype(float).to_numpy()
+                    market_data_fresh=bool(
+                        (datetime.now(timezone.utc).date()-last_date.date()).days<=4
+                    )
+                    blocked_entries=bool(next_risk or last4>=4 or not market_data_fresh)
+                    rec=reconcile_portfolio(
+                        manual_positions,snapshot,
+                        soxl_close=quote["price"] if quote else None,
+                        fx_krw_per_usd=fx_quote["price"] if fx_quote else None,
+                        risk_blocked=blocked_entries,
+                        orders_verified_empty=scoped_empty,
+                        quote_fresh=bool(quote and quote["fresh"]),
+                        fx_fresh=bool(fx_quote and fx_quote["fresh"]),
+                        broker_fresh=broker_fresh,
+                    )
+                    c1,c2,c3,c4=st.columns(4)
+                    c1.metric("실제 보유 슬롯(사용자 확인)",f"{rec['slots']} / 6")
+                    c2.metric("실제 SOXL 보유",f"{rec['broker_qty']}주")
+                    c3.metric("추정 NAV(USD)",f"${float(rec['nav_usd_estimate']):,.2f}" if rec["nav_usd_estimate"] else "미산정")
+                    c4.metric("추정 NAV(KRW)",f"₩{float(rec['nav_krw_estimate']):,.0f}" if rec["nav_krw_estimate"] else "미산정")
+                    if quote and fx_quote:
+                        st.caption(f"참고 SOXL ${quote['price']:,.2f} ({quote['stamp']}) · USD/KRW ₩{fx_quote['price']:,.2f} ({fx_quote['stamp']}). 확정 체결가격이 아닙니다.")
+                    st.markdown("#### 다음 신규 매수금액 · 참고 계산")
+                    if rec["buy_preview_ready"]:
+                        st.success(f"수량·현금·참고가격 검증 조건 충족 · 남은 슬롯 {rec['free_slots']}개")
+                        st.write(f"기본 슬롯 NAV/6 = ${float(rec['one_slot_usd']):,.2f} · USD 현금 내 참고 매수액 = **${float(rec['base_buy_usd_reference']):,.2f}**")
+                        if rec["free_slots"]>=2:
+                            st.write(f"급락 LOC 추가매수 참고 가용액 = ${float(rec['crash_buy_usd_reference']):,.2f}")
+                        st.warning("조회용 계산입니다. 메리츠 공식 주문가능금액·미체결 금액·시장가 주문 지원 여부를 보증하지 않으며 실제 주문은 전송되지 않습니다.")
                     else:
-                        st.warning(f"복구 원장 {comparison['manual']}주 / 메리츠 {comparison['broker']}주 / 차이 {comparison['difference']}주. 기존 V10/V11 보유 등 미등록 슬롯이 있을 수 있습니다.")
-                st.warning("실제 보유잔고는 V12 연구용 슬롯에 자동 편입하지 않습니다. 주문 전 별도 재조정이 필요합니다.")
-            except Exception:
-                st.error("메리츠 계좌 조회가 실패했습니다. 자격정보 및 API 상태를 확인하세요. 주문은 전송되지 않았습니다.")
+                        st.warning("안전 검증 미충족: 다음 매수액을 주문 가능한 금액으로 제시하지 않습니다.")
+                        for message in rec["blockers"]:
+                            st.caption("• "+message)
+                    if pending_orders is not None:
+                        st.caption("해외 미체결·예약주문 조회: "+str(len(pending_orders.get("orders",[])))+"건. "+str(pending_orders.get("note","")))
+                    if manual_positions:
+                        rows=[]
+                        for pos in manual_positions:
+                            days_after=0
+                            entry=pd.Timestamp(pos["entry_date"])
+                            valid=data.loc[data["Date"]>entry,"Date"]
+                            days_after=len(valid)
+                            days_label=("D"+str(days_after))
+                            target=Decimal(pos["entry_price"])*Decimal("1.032")
+                            qty=Decimal(pos["quantity"])
+                            rows.append({"슬롯 ID":pos["slot_id"],"매수일":pos["entry_date"],
+                                         "경과 거래일":days_label,"실제 매수가($)":float(pos["entry_price"]),
+                                         "미매도 보유수량":float(qty),"LOC(+3.2%) 참고가($)":float(target),
+                                         "D7 기준":"기한 확인 필요" if days_after>=7 else f"{7-days_after}거래일 남음",
+                                         "상태":"실제 보유(사용자 등록)"})
+                        st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
+                        st.caption("경과 거래일은 가격 데이터 날짜 기준. D2·전체청산 실제 주문 대기는 체결내역·진입이력 확인 전 확정하지 않습니다.")
+                st.caption("SOXL 이외 종목/원화 현금은 참고 NAV 계산 범위를 확인해야 합니다. 모든 수치는 사용자 확인 원장·증권사 조회값 기반 추정입니다.")
+            except (LedgerError,TypeError,ValueError) as exc:
+                st.error("실계좌·복구 슬롯 정합성 계산을 완료하지 못했습니다. 매수 가능 금액은 차단합니다.")
+
     st.caption("V12 Broker READ ONLY · 기존 V10/V11, live_portfolio.enc 보존 · V12 복구 원장만 사용자 확인 후 GitHub 암호화 저장 · 자동주문 불가")
