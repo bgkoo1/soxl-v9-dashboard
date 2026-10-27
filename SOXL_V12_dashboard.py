@@ -105,8 +105,19 @@ def render_v12_dashboard():
         recent=result["daily"].iloc[-1]
         latest_close=float(result["signal_data"]["Close"].iloc[-1])
         latest_sig=result["signal_data"].iloc[-1]
-        last4=int(recent.get("Previous_Down_Streak",0))
-        blocked=bool(recent.get("Risk_State",False)) or last4>=4
+        closes=data["Close"].astype(float).to_numpy()
+        last4=0
+        for j in range(len(closes)-1,0,-1):
+            if closes[j] < closes[j-1]:
+                last4 += 1
+            else:
+                break
+        next_ma200=float(np.mean(closes[-200:])) if len(closes)>=200 else np.nan
+        next_mom20=float(closes[-1]/closes[-21]-1) if len(closes)>=21 else np.nan
+        next_risk=(np.isfinite(next_ma200) and np.isfinite(next_mom20)
+                   and closes[-1]/next_ma200-1 < -.15
+                   and -.20 <= next_mom20 < -.05)
+        blocked=bool(next_risk or last4>=4)
         pending=any(p.get("v12_full_pending") for p in positions)
         st.markdown("#### 다음 거래일 주문 참고값")
         st.caption("모델의 전일 확정 NAV를 기준으로 생성한 **조회용 참고값**입니다. 실제 주문금액·증권사 체결가가 아닙니다.")
