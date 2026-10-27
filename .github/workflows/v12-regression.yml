@@ -18,4 +18,5 @@ jobs:
       - run: python -m unittest discover -s tests -p "test_v12_regression.py" -v
       - run: python -m unittest discover -s tests -p "test_v12_manual_holdings.py" -v
       - run: python -m unittest discover -s tests -p "test_v12_portfolio_reconciliation.py" -v
+      - run: python -m unittest discover -s tests -p "test_v12_meritz_account_diagnostics.py" -v
       - run: python -m unittest discover -s tests -p "test_v11*.py" -v
