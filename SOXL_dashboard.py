@@ -374,6 +374,19 @@ st.set_page_config(
     layout="wide",
 )
 
+# V12 is the default workspace. Legacy views remain available unchanged.
+# V12 is strictly READ ONLY and never loads or mutates live_portfolio.enc.
+_workspace_version = st.sidebar.radio(
+    "운용 버전",
+    ["V12 Final · 6분할 (READ ONLY)", "이전 V11/V10 대시보드"],
+    index=0,
+    key="soxl_workspace_version",
+)
+if _workspace_version.startswith("V12"):
+    from SOXL_V12_dashboard import render_v12_dashboard
+    render_v12_dashboard()
+    st.stop()
+
 
 # ============================================================
 # STYLE
