@@ -14,6 +14,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -r requirements.txt
-      - run: python -m py_compile SOXL_V12_backtest.py SOXL_V12_dashboard.py SOXL_dashboard.py
+      - run: python -m py_compile SOXL_V12_backtest.py SOXL_V12_dashboard.py v12_manual_holdings.py SOXL_dashboard.py
       - run: python -m unittest discover -s tests -p "test_v12_regression.py" -v
+      - run: python -m unittest discover -s tests -p "test_v12_manual_holdings.py" -v
       - run: python -m unittest discover -s tests -p "test_v11*.py" -v
