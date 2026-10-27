@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import requests
 from v12_portfolio_reconciliation import reconcile_portfolio
 from v11_meritz_readonly_adapter import get_readonly_connection_status
+from v11_meritz_account_preview import MeritzAccountReadError
 
 NAME = "SOXL V12 Final · 6분할"
 RULES = {
@@ -271,6 +272,7 @@ def render_v12_dashboard():
 
         status=get_readonly_connection_status(st.secrets)
         st.caption(status["message"])
+        st.caption("계좌 조회에 실패하면 TOKEN(토큰), DEPOSIT(예수금), CURRENCIES(외화), HOLDINGS(보유종목) 중 실패 단계를 표시합니다. 계좌번호·인증키·서버 응답 원문은 표시하지 않습니다.")
         if st.button("메리츠 잔고 새로 조회 (READ ONLY)",key="v12_broker_refresh"):
             from v11_meritz_account_preview import preview_account
             from v11_meritz_orders_preview import preview_overseas_orders
@@ -295,10 +297,19 @@ def render_v12_dashboard():
                 except Exception:
                     st.session_state["v12_recent_fx_quote"]=None
                     st.warning("USD/KRW 환율 조회 실패: 추정 NAV·매수 참고값은 표시하지 않습니다.")
+            except MeritzAccountReadError as exc:
+                st.session_state.pop("v12_recent_broker_snapshot",None)
+                st.session_state.pop("v12_recent_broker_read_at",None)
+                st.session_state.pop("v12_recent_order_snapshot",None)
+                st.session_state.pop("v12_recent_soxl_quote",None)
+                st.session_state.pop("v12_recent_fx_quote",None)
+                st.error(f"메리츠 계좌 조회 실패: **{exc}**")
+                st.info("오류 단계와 HTTP/업무코드는 인증키·계좌정보를 노출하지 않는 진단값입니다. 메리츠 토큰이나 API 키, 원문 응답은 공유하지 마세요.")
             except Exception:
                 st.session_state.pop("v12_recent_broker_snapshot",None)
                 st.session_state.pop("v12_recent_broker_read_at",None)
-                st.error("메리츠 계좌 조회 실패: 보유수량·NAV 참고값을 갱신하지 않았습니다.")
+                st.session_state.pop("v12_recent_order_snapshot",None)
+                st.error("메리츠 계좌 조회 처리 중 예기치 않은 오류가 발생했습니다. 재조회 전까지 신규매수 참고값은 차단됩니다.")
         snapshot=st.session_state.get("v12_recent_broker_snapshot")
         if snapshot is not None:
             try:
