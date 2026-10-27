@@ -238,6 +238,8 @@ def run_v12_backtest(
         if full_liquidation_trigger:
             full_liquidation_signals += 1
             pending_full_ids = {p['position_id'] for p in positions}
+        for p in positions:
+            p["v12_full_pending"] = p["position_id"] in pending_full_ids
         if crash_state:
             crash_slots_bought += buys_today
             if crash_extra_bought:
