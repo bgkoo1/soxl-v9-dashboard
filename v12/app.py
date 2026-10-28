@@ -69,7 +69,8 @@ def render():
         if not st.session_state.get("authenticated"):
             st.title("SOXL V12 · 운용자 로그인")
             with st.form("login"):
-                entered = st.text_input("대시보드 비밀번호", type="password")
+                st.caption(BUILD)
+                entered = st.text_input("대시보드 비밀번호", type="password", autocomplete="current-password")
                 if st.form_submit_button("로그인"):
                     if hmac.compare_digest(entered.encode(), password.encode()):
                         st.session_state.authenticated = True
