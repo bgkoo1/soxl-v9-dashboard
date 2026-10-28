@@ -7,6 +7,7 @@ class AppTests(unittest.TestCase):
     def test_fresh_dashboard_and_buy_sell_cycle(self):
         app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "streamlit_app.py"), default_timeout=90).run()
         self.assertFalse(app.exception, [x.message for x in app.exception])
+        next(x for x in app.radio if x.key == "workspace_mode").set_value("수동 원장·백테스트").run()
         self.assertIn("오늘의 주문계획", [t.label for t in app.tabs])
         self.assertIn("V12 백테스트", [t.label for t in app.tabs])
         self.assertTrue(any(m.label == "사용 중인 슬롯" for m in app.metric))

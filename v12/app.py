@@ -15,7 +15,7 @@ from v12.broker_ui import controls as broker_controls, summary as broker_summary
 from v12.broker_book import buying_cash
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = "V12-MERITZ-ACCOUNT-20261028"
+BUILD = "V12-LIVE-DESK-20261028"
 
 
 def config():
@@ -84,7 +84,14 @@ def render():
     .hero small{color:#70dfc6;letter-spacing:2px}.hero h1{color:white;margin:5px 0;font-size:32px}
     .hero p{color:#c5d2e1;margin:0}button[kind='primary']{border-radius:9px}
     </style>""", unsafe_allow_html=True)
-    st.markdown('<div class="hero"><small>SOXL QUANT INVESTING</small><h1>V12 Final · 6슬롯 운용</h1><p>주문계획에서 실제 체결 기록과 성과 확인까지</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero"><small>SOXL QUANT INVESTING</small><h1>V12 Final · 6슬롯 운용</h1><p>메리츠 실제 계좌 · SOXL 현재가 · 오늘의 체결과 다음 행동</p></div>', unsafe_allow_html=True)
+    with st.sidebar:
+        st.caption(BUILD)
+        workspace = st.radio("운용 화면", ["메리츠 실계좌", "수동 원장·백테스트"], index=0, key="workspace_mode")
+    if workspace == "메리츠 실계좌":
+        from v12.live_desk import render_live_desk
+        render_live_desk(settings, calendar_data)
+        return
     persistent = bool(settings.get("GITHUB_TOKEN") and settings.get("PORTFOLIO_ENCRYPTION_KEY"))
     if "ledger" not in st.session_state:
         st.session_state.ledger = {"schema_version": 1, "positions": [], "closed_trades": [], "cashflows": []}
@@ -104,7 +111,7 @@ def render():
         st.caption(BUILD)
         st.success("6슬롯 · TB3 OFF")
         st.caption("메리츠 조회 전용 · 주문은 직접 실행")
-        broker_mode, broker_snapshot, broker_book, broker_error = broker_controls(settings)
+        broker_mode, broker_snapshot, broker_book, broker_error = False, None, None, None
         confirmed_nav = None
         if broker_mode:
             cash = float(buying_cash(broker_snapshot, broker_book)) if broker_snapshot and broker_book and not broker_error else 0.

@@ -19,6 +19,9 @@ PATHS = {
     "history": "/trading/v1/overseas/orders/history",
     "detail": "/trading/v1/overseas/orders/detail",
     "transactions": "/accounts/v1/me/transactions",
+    "quote": "/market/v1/overseas/prices",
+    "quote_day": "/market/v1/overseas/prices/daytime",
+    "quote_after": "/market/v1/overseas/prices/after",
 }
 OK = {"0000", "0001", "5620", "5762", "5766", "5820", "5822"}
 
@@ -56,6 +59,7 @@ class Client:
         self.session = session if session is not None else requests.Session()
         self.token, self.expiry = None, 0.
         self.last_request = 0.
+        self.detail_cache = {}
 
     def _json(self, response, stage):
         try:
@@ -132,16 +136,8 @@ class Client:
             params.update(tr_cont="1", tr_cont_key=cursor)  # preserve trailing spaces
         raise ReadError(f"{name}: 조회 페이지 한도를 초과했습니다.")
 
-    def snapshot(self, start="00000000", end=None):
-        end = end or datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
-        for value in (start, end):
-            if value != "00000000":
-                try:
-                    datetime.strptime(value, "%Y%m%d")
-                except (ValueError, TypeError):
-                    raise ReadError("조회 기간 형식을 확인하세요.") from None
-        if end == "00000000" or start > end:
-            raise ReadError("조회 기간을 확인하세요.")
+    def balances(self):
+        started = datetime.now(timezone.utc).isoformat()
         dep = self.get("deposit").get("data")
         if not isinstance(dep, dict):
             raise ReadError("원화 예수금 응답 형식 오류입니다.")
@@ -170,6 +166,21 @@ class Client:
                 "price": str(amount(r.get("psnt_prc"))),
                 "value": str(amount(r.get("frcr_vltn_amt"))),
                 "unrealized": str(amount(r.get("vltn_prls_camt"), signed=True))})
+        return {"fetched_at": started,
+                "cash_usd": str(cash), "estimated_cash_usd": str(est_cash),
+                "buying_power_usd": str(buying), "reusable_usd": str(reusable),
+                "fx": str(fx), "krw_buying_power": str(krw), "holdings": holdings}
+
+    def activity(self, start="00000000", end=None):
+        end = end or datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
+        for value in (start, end):
+            if value != "00000000":
+                try:
+                    datetime.strptime(value, "%Y%m%d")
+                except (ValueError, TypeError):
+                    raise ReadError("조회 기간 형식을 확인하세요.") from None
+        if end == "00000000" or start > end:
+            raise ReadError("조회 기간을 확인하세요.")
         history = self.rows("history", {"oder_sta_date": start, "oder_fin_date": end,
             "seln_byov_clcd": "0", "cntg_cls_code": "0"}, paginated=True)
         order_keys, outstanding = {}, []
@@ -188,7 +199,14 @@ class Client:
             raise ReadError("체결 주문이 2,000건을 넘습니다. 조회 시작일을 좁히세요.")
         fills = {}
         for (d, no), minimum in order_keys.items():
-            detail = self.rows("detail", {"oder_sta_date": d, "oder_no": no})
+            cache_key = (d, no, str(minimum))
+            cached = self.detail_cache.get(cache_key)
+            ttl = 60 if d == end else 900
+            if cached and time.monotonic() - cached[0] < ttl:
+                detail = cached[1]
+            else:
+                detail = self.rows("detail", {"oder_sta_date": d, "oder_no": no})
+                self.detail_cache[cache_key] = (time.monotonic(), detail)
             order_sum = Decimal(0)
             order_seen = set()
             for r in detail:
@@ -223,9 +241,54 @@ class Client:
         tx = [{k: r.get(k) for k in ("tr_date", "tran_srno", "smcd_name", "iscd", "cncl_yn",
                 "byng_unpr", "if_tr_qty", "tr_amt", "frcr_tr_amt", "ovsc_deal_fee")}
               for r in transactions]
-        return {"fetched_at": datetime.now(timezone.utc).isoformat(), "start": start, "end": end,
-                "cash_usd": str(cash), "estimated_cash_usd": str(est_cash),
-                "buying_power_usd": str(buying), "reusable_usd": str(reusable),
-                "fx": str(fx), "krw_buying_power": str(krw), "holdings": holdings,
+        return {"history_asof": datetime.now(timezone.utc).isoformat(), "start": start, "end": end,
                 "fills": sorted(fills.values(), key=lambda f: (f["timestamp"], f["order_no"], f["execution_no"])),
                 "outstanding": outstanding, "transactions": tx}
+
+    def snapshot(self, start="00000000", end=None):
+        return {**self.balances(), **self.activity(start, end)}
+
+    def clear_activity_cache(self):
+        self.detail_cache.clear()
+
+    def quote(self, market="AX"):
+        if market not in {"AX", "NY", "OQ"}:
+            raise ReadError("SOXL 시세 시장 코드를 확인하세요.")
+        params = {"mrkt_div_code": "OV", "mrkt_cls_code": market, "iscd": "SOXL"}
+        regular, delay = None, None
+        for flag in ("0", "1"):
+            try:
+                body = self.get("quote", {**params, "dely_rltm_cls_code": flag})
+                regular = body.get("data")
+                if (not isinstance(regular, dict) or str(regular.get("iscd", "")).upper() != "SOXL"
+                        or str(regular.get("crnc_code", "")).upper() != "USD"
+                        or amount(regular.get("prpr")) <= 0):
+                    raise ReadError("SOXL 시세의 종목·통화·가격을 확인하지 못했습니다.")
+                delay = flag
+                break
+            except ReadError:
+                regular = None
+        if regular is None:
+            raise ReadError("SOXL 현재가 조회 실패: 시세 권한·거래소 코드를 확인하세요.")
+        result = {"price": str(amount(regular["prpr"])), "previous_close": str(amount(regular.get("prdy_clpr"))),
+                  "change_pct": str(amount(regular.get("prdy_ctrt"), signed=True)),
+                  "session": "정규장 최근가", "delayed": delay == "1",
+                  "received_at": datetime.now(timezone.utc).isoformat(), "source": "메리츠 해외주식 시세"}
+        now_ny = datetime.now(ZoneInfo("America/New_York"))
+        # Extended-session endpoints expose separate last prices. They do not
+        # expose a last-trade timestamp; received_at always means request time.
+        if now_ny.weekday() < 5:
+            name, key, change_key, label = (
+                ("quote_after", "mkt_aft_prpr", "mkt_aft_prdy_ctrt", "애프터장 최근가")
+                if 16 <= now_ny.hour < 20 else
+                ("quote_day", "dytm_prpr", "dytm_prdy_ctrt", "주간거래 최근가"))
+            try:
+                extended = self.get(name, {**params, "dely_rltm_cls_code": delay}).get("data")
+                active = name == "quote_after" or str((extended or {}).get("dytm_mkt_yn", "")).upper() == "Y"
+                if (active and isinstance(extended, dict) and str(extended.get("iscd", "")).upper() == "SOXL"
+                        and amount(extended.get(key)) > 0):
+                    result.update(price=str(amount(extended[key])),
+                                  change_pct=str(amount(extended.get(change_key), signed=True)), session=label)
+            except ReadError:
+                pass  # The regular last price remains explicitly labelled.
+        return result
