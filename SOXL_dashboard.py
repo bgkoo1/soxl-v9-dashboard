@@ -374,6 +374,8 @@ st.set_page_config(
     layout="wide",
 )
 
+st.sidebar.caption("배포 코드 · V12-ORDER-20261028")
+
 # V12 is the default workspace. Legacy views remain available unchanged.
 # V12 is strictly READ ONLY and never loads or mutates live_portfolio.enc.
 _workspace_version = st.sidebar.radio(
