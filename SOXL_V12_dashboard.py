@@ -74,6 +74,7 @@ def render_v12_dashboard():
     """, unsafe_allow_html=True)
     # Original dashboard header and order-first layout render after V12 state is loaded.
     with st.sidebar:
+        st.caption("배포 코드 · V12-FULL-TRADE-20261028")
         st.markdown("### V12 Final")
         st.success("기본 전략: 6분할 고정")
         st.caption("메리츠 READ ONLY · 자동주문 OFF · 사용자 확인 시 V12 보유 원장만 저장")
