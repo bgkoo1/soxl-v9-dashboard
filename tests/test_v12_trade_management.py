@@ -3,7 +3,7 @@ import unittest
 from decimal import Decimal
 from v12_manual_holdings import reopen_slot,LedgerError
 from v12_trade_management import (
-    update_slot,record_sale,cancel_sale,add_cashflow,remove_cashflow,
+    update_slot,record_sale,edit_sale_record,cancel_sale,add_cashflow,remove_cashflow,
     cashflow_summary,realized_summary,validate_closed_trades)
 
 def seed():
@@ -26,6 +26,16 @@ class Workflow(unittest.TestCase):
         restored=cancel_sale(s,s["closed_trades"][0]["id"])
         self.assertEqual(restored["positions"][0]["quantity"],"20")
         self.assertFalse(restored["closed_trades"])
+    def test_edit_actual_sale_price_keeps_qty_and_updates_profit(self):
+        s=record_sale(seed(),"actual-1",quantity=8,exit_date="2026-10-22",
+                      exit_price="105",exit_strategy="LOC +3.2%")
+        trade_id=s["closed_trades"][0]["id"]
+        edited=edit_sale_record(s,trade_id,exit_date="2026-10-23",
+                          exit_price="107",exit_strategy="수동 매도")
+        self.assertEqual(edited["closed_trades"][0]["quantity"],"8")
+        self.assertEqual(edited["closed_trades"][0]["exit_date"],"2026-10-23")
+        self.assertEqual(realized_summary(edited),Decimal("56"))
+        self.assertEqual(edited["positions"][0]["quantity"],"12")
     def test_complete_sale_and_undo(self):
         s=record_sale(seed(),"actual-1",quantity=20,exit_date="2026-10-22",
                       exit_price="90",exit_strategy="D2 손절")
