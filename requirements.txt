@@ -1,9 +1,8 @@
-streamlit
-pandas
-plotly
-yfinance
-requests
-cryptography
-scipy
-scikit-learn
-pandas-market-calendars
+streamlit==1.66.1
+pandas==2.2.3
+numpy==2.3.5
+plotly==7.1.0
+requests==2.34.2
+cryptography==50.0.2
+pandas-market-calendars==5.5.0
+yfinance>=0.2.65,<2
