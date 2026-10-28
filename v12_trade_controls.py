@@ -40,6 +40,43 @@ def render_trade_controls(state,sha,error,latest_close):
                 _save(result,sha,"실제 매수 슬롯 저장 완료")
             except LedgerError as exc:
                 st.error(str(exc))
+        st.divider()
+        st.markdown("#### 기존 V10/V11 저장 슬롯 가져오기")
+        st.caption("기존 암호화 원장의 저장 수량은 이미 매도됐을 수도 있습니다. 직접 확인한 미매도 슬롯만 V12로 복사하세요. 이전 원장은 수정하지 않습니다.")
+        if st.button("기존 V10/V11 저장 슬롯 조회 (읽기 전용)",key="v12_legacy_import_refresh"):
+            from v12_legacy_import import load_legacy_candidates
+            try:
+                st.session_state["v12_legacy_import_candidates"]=load_legacy_candidates(st.secrets)
+            except LedgerError as exc:
+                st.error(str(exc))
+        candidates=st.session_state.get("v12_legacy_import_candidates",[])
+        available=[x for x in candidates if x["slot_id"] not in {p["slot_id"] for p in lots}]
+        if available:
+            names={f"{x['entry_date']} · 수량 {x['saved_quantity']}주 · {x['old_key']}":x for x in available}
+            picked=st.selectbox("가져올 기존 슬롯",list(names),key="v12_legacy_selected")
+            found=names[picked]
+            with st.form("v12_legacy_import_form"):
+                dt=st.date_input("실제 매수일",value=date.fromisoformat(found["entry_date"]))
+                default_price=float(found["saved_entry_price"]) if found["saved_entry_price"] else float(latest_close)
+                price=st.number_input("실제 매수가 (USD)",min_value=.0001,value=default_price,format="%.4f")
+                qty=st.number_input("현재 미매도 수량(주)",min_value=1,
+                     value=max(1,int(Decimal(found["saved_quantity"]))),step=1)
+                acknowledged=st.checkbox("기존 저장기록을 실제 계좌와 대조했으며, 지금도 미매도 상태로 보유 중임을 확인했습니다.")
+                do_import=st.form_submit_button("선택 슬롯만 V12 실제 보유로 복사",type="primary")
+            if do_import:
+                if not acknowledged:
+                    st.error("미매도 상태와 체결가·수량을 확인해야 합니다.")
+                else:
+                    try:
+                        row={"slot_id":found["slot_id"],"entry_date":dt.isoformat(),
+                             "entry_price":str(price),"quantity":str(qty),
+                             "source":"manual","model_exit":"V10/V11 기존 기록 가져오기",
+                             "note":"기존 저장 원장에서 사용자 확인 후 복사"}
+                        _save({**state,"positions":reopen_slot(lots,row)},sha,"선택한 기존 슬롯 복사 완료 · 기존 원장 보존")
+                    except LedgerError as exc:
+                        st.error(str(exc))
+        elif candidates:
+            st.caption("이미 V12로 복사한 슬롯만 있거나 가져올 후보가 없습니다.")
     with tab_edit:
         if not lots:
             st.caption("수정할 실제 보유 슬롯이 없습니다.")
