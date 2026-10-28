@@ -10,6 +10,7 @@ from decimal import Decimal
 from datetime import datetime, timezone
 import requests
 from v12_portfolio_reconciliation import reconcile_portfolio
+from v12_order_center import render_order_center
 from v11_meritz_readonly_adapter import get_readonly_connection_status
 from v11_meritz_account_preview import MeritzAccountReadError
 
@@ -71,7 +72,7 @@ def render_v12_dashboard():
     div[data-testid="stMetric"]{border:1px solid #e2e8f0;border-radius:12px;padding:13px}
     </style>
     """, unsafe_allow_html=True)
-    st.markdown('<div class="v12-hero"><h2>SOXL V12 Final · 6분할</h2><p>연구 백테스트 · 실제 보유 슬롯 복구 · 메리츠 조회 전용 | 실거래 주문 비활성화</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="v12-hero"><h2>SOXL V12 Final · 6분할</h2><p>오늘의 주문 · 보유 슬롯 · 목표매도 · 실제 보유 관리 | 주문 전송 비활성화</p></div>', unsafe_allow_html=True)
     st.caption("과거 V10/V11 원장 및 live_portfolio.enc는 보존합니다. 가상 매도 취소는 별도의 암호화된 V12 실제 보유 원장에만 저장됩니다.")
     with st.sidebar:
         st.markdown("### V12 Final")
@@ -111,6 +112,10 @@ def render_v12_dashboard():
         manual_positions,ledger_sha=load_ledger(st.secrets)
     except LedgerError as exc:
         ledger_error=str(exc)
+    # Primary screen restores legacy order-first workflow without mixing research lots.
+    render_order_center(data,result,manual_positions,ledger_error)
+    st.divider()
+    st.caption("아래는 연구 백테스트와 실제 보유 복구·메리츠 잔고 조회의 상세 화면입니다.")
     t1,t2,t3,t4=st.tabs(["NAV·낙폭", "보유 슬롯·다음 주문", "가상 매도 취소·실제 보유", "거래·방어 신호"])
     with t1:
         dates=eq["Date"]
@@ -297,6 +302,8 @@ def render_v12_dashboard():
                 except Exception:
                     st.session_state["v12_recent_fx_quote"]=None
                     st.warning("USD/KRW 환율 조회 실패: 추정 NAV·매수 참고값은 표시하지 않습니다.")
+                # Refresh the restored top order cards on the same user action.
+                st.rerun()
             except MeritzAccountReadError as exc:
                 st.session_state.pop("v12_recent_broker_snapshot",None)
                 st.session_state.pop("v12_recent_broker_read_at",None)
