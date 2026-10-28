@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 from v12_manual_holdings import LedgerError,reopen_slot,save_portfolio_state
 from v12_trade_management import (
-    update_slot,record_sale,cancel_sale,add_cashflow,remove_cashflow,REASONS)
+    update_slot,record_sale,edit_sale_record,cancel_sale,add_cashflow,remove_cashflow,REASONS)
 
 def _save(state,sha,message):
     try:
@@ -21,8 +21,8 @@ def render_trade_controls(state,sha,error,latest_close):
         st.error("암호화 보유 원장을 확인할 수 없어 편집·매도·저장을 중단합니다.")
         return
     lots=state["positions"];sales=state["closed_trades"];flows=state["cashflows"]
-    tab_buy,tab_edit,tab_sell,tab_undo,tab_cash=st.tabs(
-        ["매수 등록","보유 슬롯 수정","실제 매도 등록","매도 취소·복구","입출금 관리"])
+    tab_buy,tab_edit,tab_sell,tab_sale_edit,tab_undo,tab_cash=st.tabs(
+        ["매수 등록","보유 슬롯 수정","실제 매도 등록","청산 거래 수정","매도 취소·복구","입출금 관리"])
     with tab_buy:
         st.caption("실제로 체결된 매수만 등록하세요. 전략 가상매수와 혼동하지 않습니다.")
         with st.form("v12_real_buy"):
@@ -133,6 +133,33 @@ def render_trade_controls(state,sha,error,latest_close):
                         _save(result,sha,"실제 매도 등록 · 잔여 보유수량 반영 완료")
                     except LedgerError as exc:
                         st.error(str(exc))
+    with tab_sale_edit:
+        if not sales:
+            st.caption("수정할 실제 매도기록이 없습니다.")
+        else:
+            options={f"{x['exit_date']} · {x['slot_id']} · {x['quantity']}주":x for x in sales}
+            picked=st.selectbox("수정할 청산 거래",list(options),key="v12_sale_edit_selector")
+            x=options[picked]
+            with st.form("v12_sale_edit_form"):
+                sale_day=st.date_input("실제 매도일",value=date.fromisoformat(x["exit_date"]),key="v12_sale_edit_day")
+                sale_price=st.number_input("실제 매도 체결가 (USD)",min_value=.0001,
+                      value=float(x["exit_price"]),format="%.4f",key="v12_sale_edit_price")
+                choices=["LOC +3.2%","D2 손절","D7 MOC","조건부 전체 MOC","수동 매도","기타"]
+                reason=st.selectbox("매도 유형",choices,index=choices.index(x["exit_strategy"]),key="v12_sale_edit_reason")
+                memo=st.text_input("메모",value=x.get("note",""),key="v12_sale_edit_note")
+                confirmed=st.checkbox("실제 매도 체결내역을 확인했습니다.",key="v12_sale_edit_confirm")
+                submitted=st.form_submit_button("실제 매도 체결가·거래일 수정 저장")
+            if submitted:
+                if not confirmed:
+                    st.error("수정할 실제 매도내역을 확인해 주세요.")
+                else:
+                    try:
+                        result=edit_sale_record(state,x["id"],exit_date=sale_day.isoformat(),
+                            exit_price=sale_price,exit_strategy=reason,note=memo)
+                        _save(result,sha,"실제 청산 거래 기록 수정 완료")
+                    except LedgerError as exc:
+                        st.error(str(exc))
+            st.caption("매도수량이 잘못 입력된 경우에는 '매도 취소·복구'에서 취소 후 정확한 수량으로 다시 등록하세요.")
     with tab_undo:
         if not sales:
             st.info("사용자가 직접 등록한 실제 매도기록이 없습니다. 전략의 가상 자동매도 취소는 하단 ‘가상 매도 취소·실제 보유’ 탭에서 진행하세요.")
