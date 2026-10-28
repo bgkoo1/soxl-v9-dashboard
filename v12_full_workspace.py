@@ -56,6 +56,39 @@ def _us_trading_days(data,entry):
     dates=pd.to_datetime(data["Date"]).dt.date
     return int((dates>pd.Timestamp(entry).date()).sum())
 
+def _refresh_broker_readonly():
+    """GET-only broker account and orders; OAuth POST is authentication, not an order."""
+    from v11_meritz_account_preview import preview_account,MeritzAccountReadError
+    from v11_meritz_orders_preview import preview_overseas_orders
+    from SOXL_V12_dashboard import _market_reference
+    try:
+        snapshot=preview_account(st.secrets)
+        st.session_state["v12_recent_broker_snapshot"]=snapshot
+        st.session_state["v12_recent_broker_read_at"]=datetime.now(timezone.utc).isoformat()
+    except MeritzAccountReadError as exc:
+        for k in ("v12_recent_broker_snapshot","v12_recent_broker_read_at",
+                  "v12_recent_order_snapshot","v12_recent_soxl_quote","v12_recent_fx_quote"):
+            st.session_state.pop(k,None)
+        st.error("메리츠 계좌 조회 실패: "+str(exc))
+        return
+    except Exception:
+        st.session_state.pop("v12_recent_broker_snapshot",None)
+        st.session_state.pop("v12_recent_broker_read_at",None)
+        st.error("메리츠 계좌 조회 처리 오류 · 자격정보와 API 상태 확인 필요")
+        return
+    try:st.session_state["v12_recent_order_snapshot"]=preview_overseas_orders(st.secrets)
+    except Exception:
+        st.session_state["v12_recent_order_snapshot"]=None
+        st.warning("미체결·예약주문 조회 실패: 매수금액 확정 불가")
+    for ticker,key in [("SOXL","v12_recent_soxl_quote"),("KRW=X","v12_recent_fx_quote")]:
+        try:st.session_state[key]=_market_reference(ticker)
+        except Exception:
+            st.session_state[key]=None
+            st.warning(ticker+" 시세 조회 실패: 수동 참고값을 사용할 수 있습니다.")
+    st.success("메리츠 계좌 조회 완료 · 주문은 전송되지 않았습니다.")
+    st.rerun()
+
+
 def _snapshot_values(data,state):
     """Broker snapshot is optional; manual values are separately labelled as estimates."""
     close=float(data["Close"].iloc[-1])
@@ -276,6 +309,12 @@ def render_full_workspace(data,research):
         return
     values=_snapshot_values(data,state)
     actual_rows=_rows(state,values,data)
+    b1,b2=st.columns([2,1],gap="medium")
+    with b1:
+        st.caption("현재 적용 기준: "+values["source"]+" · 참고 일봉 "+str(pd.Timestamp(data["Date"].iloc[-1]).date()))
+    with b2:
+        if st.button("메리츠 잔고 새로 조회 (READ ONLY)",key="v12_full_broker_refresh",use_container_width=True):
+            _refresh_broker_readonly()
     l,r=st.columns([1.05,1],gap="medium")
     with l:
         with st.container(border=True):
@@ -364,4 +403,12 @@ def render_full_workspace(data,research):
                 v12_manual_price=str(price),v12_manual_fx=str(fx))
             st.rerun()
         st.caption("메리츠 잔고 최신 조회는 아래의 기존 READ ONLY 패널에서 수행할 수 있습니다.")
+    with st.expander("V12 연구 백테스트 · 자산곡선 및 실험 거래",expanded=False):
+        fig_data=research.get("equity",pd.DataFrame())
+        if isinstance(fig_data,pd.DataFrame) and not fig_data.empty:
+            st.line_chart(fig_data.set_index("Date")["Equity"],height=260)
+        trades=research.get("trades",pd.DataFrame())
+        if isinstance(trades,pd.DataFrame) and not trades.empty:
+            st.dataframe(trades.tail(60).iloc[::-1],use_container_width=True,hide_index=True)
+        st.caption("과거 모델의 가상체결이며 실제 메리츠 매매 체결이 아닙니다.")
     st.caption(f"{BUILD} · 기존 V10/V11 및 live_portfolio.enc 보존 · V12 별도 암호화 거래 원장 · 매매 주문 비활성화")
