@@ -26,8 +26,8 @@ class Smoke(unittest.TestCase):
         self.assertIn("TODAY'S ACTION",md)
         self.assertIn("보유 슬롯 미리보기",md)
         self.assertIn("상세 주문",md)
-        self.assertIn("LOC 목표가",md)
-        self.assertIn("목표 매도금액",md)
+        columns=[set(str(c) for c in table.value.columns) for table in app.dataframe]
+        self.assertTrue(any("LOC 목표가" in c and "목표 매도금액" in c for c in columns))
         labels=[x.label for x in app.tabs]
         self.assertIn("실제 매도 등록",labels)
         self.assertIn("매도 취소·복구",labels)
