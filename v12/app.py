@@ -11,9 +11,11 @@ import streamlit as st
 from v12.engine import backtest, plan
 from v12_manual_holdings import load_portfolio_state, save_portfolio_state, reopen_slot, LedgerError
 from v12_trade_management import record_sale, cancel_sale, update_slot, add_cashflow, realized_summary
+from v12.broker_ui import controls as broker_controls, summary as broker_summary, holdings_view, journal_view
+from v12.broker_book import buying_cash
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = "V12-REBUILD-20261028"
+BUILD = "V12-MERITZ-ACCOUNT-20261028"
 
 
 def config():
@@ -102,9 +104,18 @@ def render():
         st.caption(BUILD)
         st.success("6슬롯 · TB3 OFF")
         st.caption("메리츠 조회 전용 · 주문은 직접 실행")
-        cash = st.number_input("전일 확정 USD 예수금 ($)", min_value=0., value=0., step=100., key="cash_usd")
-        fx = st.number_input("평가환율 (원/USD, 직접 입력)", min_value=1., value=1400., step=1.)
-        st.caption("예수금은 전일 확정 잔액을 입력합니다. 당일 매도 예상대금은 더하지 않습니다.")
+        broker_mode, broker_snapshot, broker_book, broker_error = broker_controls(settings)
+        confirmed_nav = None
+        if broker_mode:
+            cash = float(buying_cash(broker_snapshot, broker_book)) if broker_snapshot and broker_book and not broker_error else 0.
+            fx = float(broker_snapshot["fx"]) if broker_snapshot else 0.
+            confirmed_nav = st.number_input("V12 전일 확정 NAV ($)", min_value=0., value=0., step=100., key="broker_nav",
+                help="NAV/6 매수 예산의 기준입니다. V12에 배정한 전일 확정 USD 현금+SOXL 평가액을 입력합니다. 현재 장중 잔고를 전일 확정 NAV로 간주하지 않습니다.")
+            st.caption("전일 확정 NAV 입력 전에는 신규매수 계획을 보류합니다. 예수금·보유·체결 조회에는 영향을 주지 않습니다.")
+        else:
+            cash = st.number_input("전일 확정 USD 예수금 ($)", min_value=0., value=0., step=100., key="cash_usd")
+            fx = st.number_input("평가환율 (원/USD, 직접 입력)", min_value=1., value=1400., step=1.)
+            st.caption("예수금은 전일 확정 잔액을 입력합니다. 당일 매도 예상대금은 더하지 않습니다.")
         if st.button("가격·원장 다시 불러오기"):
             calendar_data.clear()
             for key in ["ledger", "ledger_sha", "storage_error", "broker_snapshot"]:
@@ -115,7 +126,15 @@ def render():
             st.session_state.clear()
             st.rerun()
     state = st.session_state.ledger
-    if st.session_state.storage_error:
+    if broker_mode:
+        if broker_snapshot is None or broker_error or broker_book is None:
+            st.error("메리츠 계좌를 정상 조회하지 못했습니다. 사이드바에서 설정을 확인하고 다시 조회하세요.")
+            if broker_snapshot:
+                st.caption("마지막 정상 조회 자료이며 최신 운용값으로 사용하지 않습니다.")
+                broker_summary(broker_snapshot, None)
+            st.stop()
+        state = broker_book
+    if st.session_state.storage_error and not broker_mode:
         st.error(st.session_state.storage_error)
         st.info("원장 복구 전에는 실제 보유 기반 주문계획을 표시하지 않습니다.")
         st.stop()
@@ -125,7 +144,7 @@ def render():
             raise ValueError("확정 가격 데이터가 없습니다.")
         latest = pd.Timestamp(data.Date.max())
         stale = latest < expected
-        orders = plan(data, state["positions"], cash, next_day, state["closed_trades"])
+        orders = plan(data, state["positions"], cash, next_day, state["closed_trades"], allocation_nav=confirmed_nav)
     except (ValueError, KeyError, IndexError) as exc:
         st.error(f"가격·거래일 검증 실패: {exc}")
         st.stop()
@@ -134,11 +153,14 @@ def render():
         st.warning(f"종가 데이터가 지연됐습니다. 필요한 최신 거래일은 {expected.date()}입니다. 주문계획을 숨깁니다.")
     qty = sum(float(p["quantity"]) for p in state["positions"])
     realized = float(realized_summary(state))
-    cols = st.columns(4)
-    cols[0].metric("기록 기반 평가자산", f"${orders['nav']:,.2f}", help="입력 예수금 + 기록 수량 × 확정 종가. 증권사 잔고가 아닙니다.")
-    cols[1].metric("사용 중인 슬롯", f"{len(state['positions'])} / 6", f"{qty:,.4f}주", delta_color="off")
-    cols[2].metric("슬롯 배정액 · NAV/6", f"${orders['nav']/6:,.2f}")
-    cols[3].metric("실현 손익 · 비용 전", f"${realized:,.2f}", f"{realized*fx:,.0f}원 · 입력 환율", delta_color="off")
+    if broker_mode:
+        broker_summary(broker_snapshot, broker_book)
+    else:
+        cols = st.columns(4)
+        cols[0].metric("기록 기반 평가자산", f"${orders['nav']:,.2f}", help="입력 예수금 + 기록 수량 × 확정 종가. 증권사 잔고가 아닙니다.")
+        cols[1].metric("사용 중인 슬롯", f"{len(state['positions'])} / 6", f"{qty:,.4f}주", delta_color="off")
+        cols[2].metric("슬롯 배정액 · NAV/6", f"${orders['nav']/6:,.2f}")
+        cols[3].metric("실현 손익 · 비용 전", f"${realized:,.2f}", f"{realized*fx:,.0f}원 · 입력 환율", delta_color="off")
     tab_orders, tab_hold, tab_journal, tab_research, tab_settings = st.tabs([
         "오늘의 주문계획", "실제 보유·체결 관리", "매매일지·입출금", "V12 백테스트", "전략·연결 상태"])
     with tab_orders:
@@ -149,7 +171,13 @@ def render():
         flags[2].metric("20일 변동성", pct(orders["vol20"]))
         for issue in orders["issues"]:
             st.error(issue)
-        if not stale:
+        if broker_mode:
+            orders["issues"].extend(broker_book["issues"])
+            if not confirmed_nav:
+                orders["buys"] = []
+                st.info("신규매수 계획에는 사이드바의 V12 전일 확정 NAV가 필요합니다.")
+            st.caption("매수 재원은 실제 USD 예수금과 주문가능금액 중 보수적인 금액입니다. 당일 매도대금·재매매 가능 금액을 제외하며, 다른 종목 평가액은 V12 슬롯 예산에 포함하지 않습니다.")
+        if not stale and (not broker_mode or (broker_book["matched"] and not orders["issues"])):
             st.markdown("**매도 · 우선순위 반영**")
             if orders["sells"]:
                 st.dataframe(pd.DataFrame(orders["sells"]), hide_index=True, width="stretch")
@@ -165,96 +193,102 @@ def render():
             st.download_button("주문계획 CSV", frame.to_csv(index=False).encode("utf-8-sig"), "v12_order_plan.csv", "text/csv")
         st.caption("전체청산 → D2 개별청산 → D7 → LOC 순서로 슬롯마다 매도계획 하나만 생성합니다. 전략상 청산 신호는 실제 체결을 뜻하지 않습니다.")
     with tab_hold:
-        st.subheader("실제 체결 기록으로 관리하는 6슬롯")
-        if state["positions"]:
-            table = pd.DataFrame(state["positions"])
-            table["LOC 목표가($)"] = table.entry_price.astype(float) * 1.032
-            table["평가손익($)"] = (orders["reference"] - table.entry_price.astype(float)) * table.quantity.astype(float)
-            st.dataframe(table[["slot_id", "entry_date", "entry_price", "quantity", "LOC 목표가($)", "평가손익($)"]], hide_index=True, width="stretch")
-        actions = st.tabs(["매수 등록", "실제 매도 등록", "보유 수정", "매도 취소·복구"])
-        with actions[0], st.form("buy"):
-            entry_date = st.date_input("매수 체결일", value=latest.date(), max_value=date.today())
-            price = st.number_input("실제 매수가 ($)", min_value=.0001, value=float(orders["reference"]), format="%.4f")
-            quantity = st.number_input("실제 매수수량 (주)", min_value=.0001, value=1., format="%.4f")
-            note = st.text_input("매수 메모")
-            confirmed = st.checkbox("실제 체결내역을 확인했습니다", key="buy_confirm")
-            if st.form_submit_button("매수 체결 반영", type="primary"):
-                if not confirmed:
-                    st.error("체결내역 확인을 선택하세요.")
-                elif len(state["positions"]) >= 6:
-                    st.error("V12 최대 6슬롯입니다.")
-                elif pd.Timestamp(entry_date) not in set(data.Date):
-                    st.error("확정 가격 데이터에 있는 거래일을 선택하세요.")
-                else:
-                    slot = {"slot_id": "actual-" + uuid4().hex[:12], "entry_date": str(entry_date), "entry_price": str(price), "quantity": str(quantity), "note": note, "source": "manual"}
-                    save({**state, "positions": reopen_slot(state["positions"], slot)}, settings)
-        with actions[1]:
+        if broker_mode:
+            holdings_view(broker_snapshot, broker_book)
+        else:
+            st.subheader("실제 체결 기록으로 관리하는 6슬롯")
             if state["positions"]:
-                with st.form("sell"):
-                    ident = st.selectbox("매도한 슬롯", [p["slot_id"] for p in state["positions"]])
-                    sold_date = st.date_input("매도 체결일", max_value=date.today())
-                    sold_price = st.number_input("실제 매도가 ($)", min_value=.0001, value=float(orders["reference"]), format="%.4f")
-                    sold_qty = st.number_input("실제 매도수량 (주)", min_value=.0001, value=1., format="%.4f")
-                    reason = st.selectbox("매도 사유", ["LOC +3.2%", "D2 손절", "D7 MOC", "조건부 전체 MOC", "수동 매도", "기타"])
-                    checked = st.checkbox("증권사에서 실제 매도 체결을 확인했습니다")
-                    if st.form_submit_button("매도 체결 반영", type="primary"):
+                table = pd.DataFrame(state["positions"])
+                table["LOC 목표가($)"] = table.entry_price.astype(float) * 1.032
+                table["평가손익($)"] = (orders["reference"] - table.entry_price.astype(float)) * table.quantity.astype(float)
+                st.dataframe(table[["slot_id", "entry_date", "entry_price", "quantity", "LOC 목표가($)", "평가손익($)"]], hide_index=True, width="stretch")
+            actions = st.tabs(["매수 등록", "실제 매도 등록", "보유 수정", "매도 취소·복구"])
+            with actions[0], st.form("buy"):
+                entry_date = st.date_input("매수 체결일", value=latest.date(), max_value=date.today())
+                price = st.number_input("실제 매수가 ($)", min_value=.0001, value=float(orders["reference"]), format="%.4f")
+                quantity = st.number_input("실제 매수수량 (주)", min_value=.0001, value=1., format="%.4f")
+                note = st.text_input("매수 메모")
+                confirmed = st.checkbox("실제 체결내역을 확인했습니다", key="buy_confirm")
+                if st.form_submit_button("매수 체결 반영", type="primary"):
+                    if not confirmed:
+                        st.error("체결내역 확인을 선택하세요.")
+                    elif len(state["positions"]) >= 6:
+                        st.error("V12 최대 6슬롯입니다.")
+                    elif pd.Timestamp(entry_date) not in set(data.Date):
+                        st.error("확정 가격 데이터에 있는 거래일을 선택하세요.")
+                    else:
+                        slot = {"slot_id": "actual-" + uuid4().hex[:12], "entry_date": str(entry_date), "entry_price": str(price), "quantity": str(quantity), "note": note, "source": "manual"}
+                        save({**state, "positions": reopen_slot(state["positions"], slot)}, settings)
+            with actions[1]:
+                if state["positions"]:
+                    with st.form("sell"):
+                        ident = st.selectbox("매도한 슬롯", [p["slot_id"] for p in state["positions"]])
+                        sold_date = st.date_input("매도 체결일", max_value=date.today())
+                        sold_price = st.number_input("실제 매도가 ($)", min_value=.0001, value=float(orders["reference"]), format="%.4f")
+                        sold_qty = st.number_input("실제 매도수량 (주)", min_value=.0001, value=1., format="%.4f")
+                        reason = st.selectbox("매도 사유", ["LOC +3.2%", "D2 손절", "D7 MOC", "조건부 전체 MOC", "수동 매도", "기타"])
+                        checked = st.checkbox("증권사에서 실제 매도 체결을 확인했습니다")
+                        if st.form_submit_button("매도 체결 반영", type="primary"):
+                            if checked:
+                                try:
+                                    save(record_sale(state, ident, quantity=sold_qty, exit_date=str(sold_date), exit_price=sold_price, exit_strategy=reason), settings)
+                                except LedgerError as exc:
+                                    st.error(str(exc))
+                            else:
+                                st.error("실제 체결 확인을 선택하세요.")
+                else:
+                    st.info("매도할 보유 슬롯이 없습니다.")
+            with actions[2]:
+                if state["positions"]:
+                    ident = st.selectbox("수정할 슬롯", [p["slot_id"] for p in state["positions"]], key="edit_slot")
+                    p = next(p for p in state["positions"] if p["slot_id"] == ident)
+                    with st.form("edit_" + ident):
+                        d = st.date_input("수정 매수일", value=date.fromisoformat(p["entry_date"]), max_value=date.today())
+                        px = st.number_input("수정 매수가 ($)", min_value=.0001, value=float(p["entry_price"]), format="%.4f")
+                        q = st.number_input("수정 보유수량", min_value=.0001, value=float(p["quantity"]), format="%.4f")
+                        if st.form_submit_button("수정 반영"):
+                            if pd.Timestamp(d) not in set(data.Date):
+                                st.error("가격 데이터의 거래일을 선택하세요.")
+                            else:
+                                try:
+                                    save(update_slot(state, ident, entry_date=str(d), entry_price=px, quantity=q), settings)
+                                except LedgerError as exc:
+                                    st.error(str(exc))
+            with actions[3]:
+                if state["closed_trades"]:
+                    names = {t["id"]: f"{t['exit_date']} · {t['slot_id']} · {t['quantity']}주" for t in state["closed_trades"]}
+                    ident = st.selectbox("취소할 매도 기록", list(names), format_func=names.get)
+                    checked = st.checkbox("잘못 기록된 매도를 취소하고 수량을 복구합니다")
+                    if st.button("선택한 매도 취소"):
                         if checked:
                             try:
-                                save(record_sale(state, ident, quantity=sold_qty, exit_date=str(sold_date), exit_price=sold_price, exit_strategy=reason), settings)
+                                save(cancel_sale(state, ident), settings)
                             except LedgerError as exc:
                                 st.error(str(exc))
                         else:
-                            st.error("실제 체결 확인을 선택하세요.")
-            else:
-                st.info("매도할 보유 슬롯이 없습니다.")
-        with actions[2]:
-            if state["positions"]:
-                ident = st.selectbox("수정할 슬롯", [p["slot_id"] for p in state["positions"]], key="edit_slot")
-                p = next(p for p in state["positions"] if p["slot_id"] == ident)
-                with st.form("edit_" + ident):
-                    d = st.date_input("수정 매수일", value=date.fromisoformat(p["entry_date"]), max_value=date.today())
-                    px = st.number_input("수정 매수가 ($)", min_value=.0001, value=float(p["entry_price"]), format="%.4f")
-                    q = st.number_input("수정 보유수량", min_value=.0001, value=float(p["quantity"]), format="%.4f")
-                    if st.form_submit_button("수정 반영"):
-                        if pd.Timestamp(d) not in set(data.Date):
-                            st.error("가격 데이터의 거래일을 선택하세요.")
-                        else:
-                            try:
-                                save(update_slot(state, ident, entry_date=str(d), entry_price=px, quantity=q), settings)
-                            except LedgerError as exc:
-                                st.error(str(exc))
-        with actions[3]:
-            if state["closed_trades"]:
-                names = {t["id"]: f"{t['exit_date']} · {t['slot_id']} · {t['quantity']}주" for t in state["closed_trades"]}
-                ident = st.selectbox("취소할 매도 기록", list(names), format_func=names.get)
-                checked = st.checkbox("잘못 기록된 매도를 취소하고 수량을 복구합니다")
-                if st.button("선택한 매도 취소"):
-                    if checked:
-                        try:
-                            save(cancel_sale(state, ident), settings)
-                        except LedgerError as exc:
-                            st.error(str(exc))
-                    else:
-                        st.error("취소·복구 확인을 선택하세요.")
-            else:
-                st.info("취소할 매도 기록이 없습니다.")
+                            st.error("취소·복구 확인을 선택하세요.")
+                else:
+                    st.info("취소할 매도 기록이 없습니다.")
     with tab_journal:
-        st.subheader("실제 매매일지")
-        st.dataframe(pd.DataFrame(state["closed_trades"]), hide_index=True, width="stretch")
-        st.subheader("입출금 기록")
-        st.caption("기록용입니다. 사이드바 USD 예수금과 자동 합산하지 않습니다.")
-        st.dataframe(pd.DataFrame(state["cashflows"]), hide_index=True, width="stretch")
-        with st.form("cashflow"):
-            d = st.date_input("입출금일", max_value=date.today())
-            typ = st.selectbox("입출금 구분", ["입금", "출금"])
-            cur = st.selectbox("통화", ["USD", "KRW"])
-            amount = st.number_input("입출금 금액", min_value=.01, value=100., step=100.)
-            if st.form_submit_button("입출금 기록 반영"):
-                try:
-                    save(add_cashflow(state, date_value=str(d), flow_type=typ, currency=cur, amount=amount), settings)
-                except LedgerError as exc:
-                    st.error(str(exc))
-        st.download_button("원장 JSON 내보내기", json.dumps(state, ensure_ascii=False, indent=2), "v12_actual_journal.json", "application/json")
+        if broker_mode:
+            journal_view(broker_snapshot, broker_book)
+        else:
+            st.subheader("실제 매매일지")
+            st.dataframe(pd.DataFrame(state["closed_trades"]), hide_index=True, width="stretch")
+            st.subheader("입출금 기록")
+            st.caption("기록용입니다. 사이드바 USD 예수금과 자동 합산하지 않습니다.")
+            st.dataframe(pd.DataFrame(state["cashflows"]), hide_index=True, width="stretch")
+            with st.form("cashflow"):
+                d = st.date_input("입출금일", max_value=date.today())
+                typ = st.selectbox("입출금 구분", ["입금", "출금"])
+                cur = st.selectbox("통화", ["USD", "KRW"])
+                amount = st.number_input("입출금 금액", min_value=.01, value=100., step=100.)
+                if st.form_submit_button("입출금 기록 반영"):
+                    try:
+                        save(add_cashflow(state, date_value=str(d), flow_type=typ, currency=cur, amount=amount), settings)
+                    except LedgerError as exc:
+                        st.error(str(exc))
+            st.download_button("원장 JSON 내보내기", json.dumps(state, ensure_ascii=False, indent=2), "v12_actual_journal.json", "application/json")
     with tab_research:
         st.subheader("독립 V12 엔진 · USD 기준 연구")
         c1, c2, c3 = st.columns(3)
@@ -293,19 +327,13 @@ def render():
             ("매수 제한", "전일 MA200 괴리율<−15% AND −20%≤20일 모멘텀<−5%, 또는 직전 4일 이상 연속 하락"),
             ("현금", "당일 매도대금은 당일 신규매수 재원에서 제외 · TB3 OFF"),
         ], columns=["항목", "규칙"]))
-        st.markdown("**메리츠 잔고 조회**")
-        if st.button("실계좌 새로 조회"):
-            try:
-                from v11_meritz_account_preview import preview_account
-                st.session_state.broker_snapshot = preview_account(settings)
-            except Exception:
-                st.error("메리츠 잔고를 조회하지 못했습니다. 인증 설정과 API 상태를 확인하세요.")
-        if st.session_state.get("broker_snapshot"):
-            snapshot = st.session_state.broker_snapshot
-            st.json(snapshot)
-            actual_qty = float(snapshot["SOXL 보유 수량(주)"].replace(",", ""))
-            st.metric("증권사 수량 − 원장 수량", f"{actual_qty-qty:,.4f}주")
-        st.caption("현재 앱은 증권사 주문을 전송하지 않습니다. 메리츠 조회 어댑터와 암호화 원장 포맷만 호환하며, 과거 대시보드·전략 엔진은 불러오지 않습니다.")
+        st.markdown("**메리츠 연결 상태**")
+        if broker_mode:
+            st.success("메리츠 실계좌 모드 · 예수금·잔고·체결 상세·거래내역 연결")
+            st.caption("마지막 정상 조회 " + broker_snapshot["fetched_at"])
+        else:
+            st.info("사이드바에서 메리츠 실계좌를 선택하면 계좌 기준으로 전환합니다.")
+        st.caption("메리츠 조회는 기존 MERITZ_APP_KEY·MERITZ_APP_SECRET·MERITZ_MAC_ADDRESS 설정을 사용합니다. 앱키에 연결된 계좌를 조회하며 증권사 주문은 전송하지 않습니다. 계좌 원본은 GitHub에 저장하지 않습니다.")
 
 
 if __name__ == "__main__":

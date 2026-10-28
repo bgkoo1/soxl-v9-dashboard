@@ -134,7 +134,7 @@ def backtest(raw, initial_usd=100000., start=None, end=None):
                       "calmar": cagr / abs(mdd) if cagr is not None and mdd < 0 else None}}
 
 
-def plan(raw, holdings, cash_usd, next_session, closed_trades=None):
+def plan(raw, holdings, cash_usd, next_session, closed_trades=None, allocation_nav=None):
     """Next-session plan for actual user lots; never changes holdings.
 
     Reconstruct pending D2 signals from recorded entry price and historical
@@ -197,6 +197,9 @@ def plan(raw, holdings, cash_usd, next_session, closed_trades=None):
                       "사유": reason, "수량": float(p["quantity"]),
                       "지정가($)": float(p["entry_price"]) * TARGET if reason == "LOC +3.2%" else None})
     nav = cash_usd + sum(float(p["quantity"]) * ref for p in holdings)
+    budget_nav = nav if allocation_nav is None else float(allocation_nav)
+    if not math.isfinite(budget_nav) or budget_nav < 0:
+        raise ValueError("전일 확정 NAV는 0 이상의 숫자여야 합니다.")
     blocked = bool(latest.risk_b or latest.down_streak >= 4 or
                    pd.isna(latest.ma_gap) or issues or len(holdings) > SLOTS)
     # Do not pre-release occupied slots from merely planned sells.
@@ -204,7 +207,7 @@ def plan(raw, holdings, cash_usd, next_session, closed_trades=None):
     available, buys = cash_usd, []
     if not blocked:
         for kind in ["기본 MOC", "급락 LOC"][:room]:
-            budget = min(nav / SLOTS, available)
+            budget = min(budget_nav / SLOTS, available)
             limit = ref if kind == "기본 MOC" else ref * CRASH
             qty = math.floor(budget / limit)
             if qty < 1:

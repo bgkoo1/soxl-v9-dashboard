@@ -19,5 +19,6 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python -m compileall -q v12 streamlit_app.py
       - run: python -m unittest discover -s tests -p 'test_rebuild*.py' -v
+      - run: python -m unittest discover -s tests -p 'test_broker*.py' -v
       - run: python -m unittest discover -s tests -p 'test_v12_manual_holdings.py' -v
       - run: python -m unittest discover -s tests -p 'test_v12_trade_management.py' -v
