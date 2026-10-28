@@ -393,6 +393,21 @@ st.set_page_config(
     layout="wide",
 )
 
+# Entry-point compatibility guard: the deployed Streamlit file may be the
+# legacy redesigned or V11 preview script rather than SOXL_dashboard.py.
+st.sidebar.caption("배포 코드 · V12-ORDER-20261028")
+_active_workspace = st.sidebar.radio(
+    "전략 화면",
+    ["V12 Final · 6분할 (주문·보유 슬롯)", "이전 대시보드 (V11/V10)"],
+    index=0,
+    key="v12_entrypoint_workspace",
+)
+if _active_workspace.startswith("V12"):
+    from SOXL_V12_dashboard import render_v12_dashboard
+    render_v12_dashboard()
+    st.stop()
+
+
 
 # ============================================================
 # STYLE
