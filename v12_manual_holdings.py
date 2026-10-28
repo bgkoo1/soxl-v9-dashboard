@@ -109,58 +109,83 @@ def _remote(secrets):
     )
 
 
-def load_ledger(secrets, sender=None):
-    """Return (ledger, blob_sha). Never interpret API failure as an empty ledger."""
-    sender = sender or requests
-    url, headers, cipher, branch = _remote(secrets)
-    try:
-        response = sender.get(url, headers=headers, params={"ref": branch}, timeout=15)
-        if response.status_code == 404:
-            return [], None
-        response.raise_for_status()
-        content = response.json()
-        payload = json.loads(cipher.decrypt(base64.b64decode(content["content"])).decode())
-        if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
-            raise LedgerError("V12 보유 원장의 형식을 확인하세요.")
-        return validate_ledger(payload.get("positions")), str(content["sha"])
-    except (InvalidToken, UnicodeDecodeError):
-        raise LedgerError("V12 암호화 원장 복호화에 실패했습니다.") from None
-    except requests.RequestException:
-        raise LedgerError("원장 조회에 실패했습니다. 기존 원장을 빈 목록으로 대체하지 않습니다.") from None
-    except (KeyError, TypeError, ValueError) as exc:
-        if isinstance(exc, LedgerError):
-            raise
-        raise LedgerError("V12 보유 원장의 데이터 형식이 올바르지 않습니다.") from None
-
-
-def save_ledger(secrets, positions, expected_sha, sender=None):
-    """Write ONLY encrypted V12 manual ledger using optimistic SHA concurrency."""
-    sender = sender or requests
-    data = validate_ledger(positions)
-    url, headers, cipher, branch = _remote(secrets)
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "positions": data,
+def _normalize_state(state):
+    """Backwards-compatible V12 encrypted state, preserving user transaction history."""
+    if not isinstance(state,dict):
+        raise LedgerError("원장 구조가 올바르지 않습니다.")
+    version=state.get("schema_version",SCHEMA_VERSION)
+    if version != SCHEMA_VERSION:
+        raise LedgerError("알 수 없는 V12 원장 버전입니다.")
+    from v12_trade_management import validate_closed_trades, validate_cashflows
+    return {
+        "schema_version":SCHEMA_VERSION,
+        "positions":validate_ledger(state.get("positions",[])),
+        "closed_trades":validate_closed_trades(state.get("closed_trades",[])),
+        "cashflows":validate_cashflows(state.get("cashflows",[])),
     }
-    encoded = base64.b64encode(cipher.encrypt(json.dumps(
-        payload, ensure_ascii=False, separators=(",", ":")).encode())).decode()
-    request_body = {"message": "Update encrypted V12 actual holdings corrections",
-                    "content": encoded, "branch": branch}
-    if expected_sha:
-        request_body["sha"] = expected_sha
-    try:
-        response = sender.put(url, headers=headers, json=request_body, timeout=20)
-        if response.status_code in (409, 412, 422):
-            raise LedgerError("다른 저장 또는 파일 변경이 감지됐습니다. 새로고침 후 다시 적용하세요.")
-        response.raise_for_status()
-        result = response.json()
-        if not result.get("content", {}).get("sha"):
-            raise LedgerError("GitHub 저장 결과를 확인하지 못했습니다.")
-        return str(result["content"]["sha"])
-    except requests.RequestException:
-        raise LedgerError("암호화 원장 저장에 실패했습니다. 변경 내용을 확정하지 않았습니다.") from None
 
+
+def load_portfolio_state(secrets,sender=None):
+    """Read the entire V12 state; failure never silently fabricates an empty account."""
+    sender=sender or requests
+    url,headers,cipher,branch=_remote(secrets)
+    try:
+        response=sender.get(url,headers=headers,params={"ref":branch},timeout=15)
+        if response.status_code==404:
+            return _normalize_state({}),None
+        response.raise_for_status()
+        item=response.json()
+        state=json.loads(cipher.decrypt(base64.b64decode(item["content"])).decode("utf-8"))
+        return _normalize_state(state),str(item["sha"])
+    except (InvalidToken,UnicodeDecodeError):
+        raise LedgerError("V12 보유 원장 복호화 실패") from None
+    except requests.RequestException:
+        raise LedgerError("GitHub 원장 읽기 실패: 기존 기록을 빈 값으로 대체하지 않습니다.") from None
+    except (KeyError,TypeError,ValueError) as exc:
+        if isinstance(exc,LedgerError):
+            raise
+        raise LedgerError("V12 보유 원장 데이터 형식 오류") from None
+
+
+def save_portfolio_state(secrets,state,expected_sha,sender=None):
+    """Atomic encrypted write (positions + real sells + cashflows) with SHA guard."""
+    sender=sender or requests
+    data=_normalize_state(state)
+    url,headers,cipher,branch=_remote(secrets)
+    payload={**data,"updated_at":datetime.now(timezone.utc).isoformat()}
+    encoded=base64.b64encode(cipher.encrypt(json.dumps(
+        payload,ensure_ascii=False,separators=(",",":")).encode("utf-8"))).decode("ascii")
+    body={"message":"Update encrypted V12 actual execution journal",
+          "content":encoded,"branch":branch}
+    if expected_sha is not None:
+        body["sha"]=expected_sha
+    try:
+        response=sender.put(url,headers=headers,json=body,timeout=20)
+        if response.status_code in (409,412,422):
+            raise LedgerError("다른 세션에서 원장이 변경됐습니다. 최신 기록을 다시 읽으세요.")
+        response.raise_for_status()
+        item=response.json()
+        result=item.get("content",{}).get("sha")
+        if not result:
+            raise LedgerError("암호화 원장 저장 확인 실패")
+        return str(result)
+    except requests.RequestException:
+        raise LedgerError("GitHub 암호화 원장 저장 실패: 기존 기록을 보존합니다.") from None
+
+
+def load_ledger(secrets,sender=None):
+    """Legacy compatibility: existing V12 UI still receives positions + SHA."""
+    state,sha=load_portfolio_state(secrets,sender)
+    return state["positions"],sha
+
+
+def save_ledger(secrets,positions,expected_sha,sender=None):
+    """Preserve transaction journal when old UI updates only open positions."""
+    state,current_sha=load_portfolio_state(secrets,sender)
+    if current_sha!=expected_sha:
+        raise LedgerError("최신 V12 원장이 변경됐습니다. 새로고침 후 다시 저장하세요.")
+    state["positions"]=validate_ledger(positions)
+    return save_portfolio_state(secrets,state,current_sha,sender)
 
 def reconcile_total(positions, broker_soxl_quantity):
     try:

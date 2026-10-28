@@ -5,12 +5,12 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 from SOXL_V12_backtest import run_v12_backtest
-from v12_manual_holdings import load_ledger, save_ledger, reopen_slot, close_manual_slot, reconcile_total, LedgerError
+from v12_manual_holdings import load_portfolio_state, save_ledger, reopen_slot, close_manual_slot, reconcile_total, LedgerError
 from decimal import Decimal
 from datetime import datetime, timezone
 import requests
 from v12_portfolio_reconciliation import reconcile_portfolio
-from v12_order_center import render_order_center
+from v12_full_order_console import render_v12_full_console
 from v11_meritz_readonly_adapter import get_readonly_connection_status
 from v11_meritz_account_preview import MeritzAccountReadError
 
@@ -72,9 +72,9 @@ def render_v12_dashboard():
     div[data-testid="stMetric"]{border:1px solid #e2e8f0;border-radius:12px;padding:13px}
     </style>
     """, unsafe_allow_html=True)
-    st.markdown('<div class="v12-hero"><h2>SOXL V12 Final · 6분할</h2><p>오늘의 주문 · 보유 슬롯 · 목표매도 · 실제 보유 관리 | 주문 전송 비활성화</p></div>', unsafe_allow_html=True)
-    st.caption("과거 V10/V11 원장 및 live_portfolio.enc는 보존합니다. 가상 매도 취소는 별도의 암호화된 V12 실제 보유 원장에만 저장됩니다.")
+    # Original dashboard header and order-first layout render after V12 state is loaded.
     with st.sidebar:
+        st.caption("배포 코드 · V12-FULL-TRADE-20261028")
         st.markdown("### V12 Final")
         st.success("기본 전략: 6분할 고정")
         st.caption("메리츠 READ ONLY · 자동주문 OFF · 사용자 확인 시 V12 보유 원장만 저장")
@@ -96,27 +96,20 @@ def render_v12_dashboard():
     last_date=pd.Timestamp(eq["Date"].iloc[-1])
     if last_date.date() < pd.Timestamp.now(tz="Asia/Seoul").date() - pd.Timedelta(days=5):
         st.warning(f"가격 데이터 최신일: {last_date.date()} — 장기 지연 가능성을 확인하세요.")
-    c1,c2,c3,c4=st.columns(4)
-    def pct(value):
-        return f"{100*float(value):,.2f}%" if value is not None and np.isfinite(float(value)) else "—"
-    c1.metric("연구 CAGR",pct(stats.get("cagr")))
-    c2.metric("연구 MDD",pct(stats.get("mdd")))
-    c3.metric("연구 Calmar",f"{float(stats.get('calmar',0)):,.3f}")
-    c4.metric("모델 현재 슬롯",f"{len(result.get('open_positions', []))} / 6")
-    st.caption(f"연구 기간 {pd.Timestamp(eq['Date'].iloc[0]).date()} ~ {last_date.date()} · 조정종가 기준 · 이상적 LOC/MOC 전량 체결 가정 · 비용 별도")
+
     # Broker remains GET-only; the corrected manual ledger is separately encrypted.
     ledger_error=None
     ledger_sha=None
-    manual_positions=[]
+    portfolio_state={"schema_version":1,"positions":[],"closed_trades":[],"cashflows":[]}
     try:
-        manual_positions,ledger_sha=load_ledger(st.secrets)
+        portfolio_state,ledger_sha=load_portfolio_state(st.secrets)
     except LedgerError as exc:
         ledger_error=str(exc)
-    # Primary screen restores legacy order-first workflow without mixing research lots.
-    render_order_center(data,result,manual_positions,ledger_error)
+    manual_positions=portfolio_state["positions"]
+    render_v12_full_console(data,result,portfolio_state,ledger_sha,ledger_error)
     st.divider()
-    st.caption("아래는 연구 백테스트와 실제 보유 복구·메리츠 잔고 조회의 상세 화면입니다.")
-    t1,t2,t3,t4=st.tabs(["NAV·낙폭", "보유 슬롯·다음 주문", "가상 매도 취소·실제 보유", "거래·방어 신호"])
+    st.caption("아래 탭은 V12 연구 백테스트·가상 매도 취소·메리츠 조회 기능입니다. 기존 V10/V11 원장은 변경하지 않습니다.")
+    t1,t2,t3,t4=st.tabs(["📈 연구 NAV·낙폭", "🧪 연구 모델 슬롯", "↩ 가상 매도 취소·실제 보유", "📋 방어 신호·거래"])
     with t1:
         dates=eq["Date"]
         nav=eq["Equity"].astype(float)

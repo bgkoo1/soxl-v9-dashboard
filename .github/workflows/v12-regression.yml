@@ -14,10 +14,14 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -r requirements.txt
-      - run: python -m py_compile SOXL_V12_backtest.py SOXL_V12_dashboard.py v12_manual_holdings.py v12_portfolio_reconciliation.py v12_order_center.py SOXL_dashboard.py SOXL_dashboard_redesigned.py SOXL_dashboard_V11_readonly_preview.py SOXL_dashboard_V11_saved_portfolio_preview.py
+      - run: python -m py_compile SOXL_V12_backtest.py SOXL_V12_dashboard.py v12_manual_holdings.py v12_portfolio_reconciliation.py v12_order_center.py v12_full_order_console.py v12_trade_controls.py v12_trade_management.py v12_legacy_import.py v12_actual_exit_status.py SOXL_dashboard.py SOXL_dashboard_redesigned.py SOXL_dashboard_V11_readonly_preview.py SOXL_dashboard_V11_saved_portfolio_preview.py
       - run: python -m unittest discover -s tests -p "test_v12_regression.py" -v
       - run: python -m unittest discover -s tests -p "test_v12_manual_holdings.py" -v
       - run: python -m unittest discover -s tests -p "test_v12_portfolio_reconciliation.py" -v
       - run: python -m unittest discover -s tests -p "test_v12_meritz_account_diagnostics.py" -v
       - run: python -m unittest discover -s tests -p "test_v12_order_center.py" -v
+      - run: python -m unittest discover -s tests -p "test_v12_trade_management.py" -v
+      - run: python -m unittest discover -s tests -p "test_v12_legacy_state_migration.py" -v
+      - run: python -m unittest discover -s tests -p "test_v12_actual_exit_status.py" -v
+      - run: python -m unittest discover -s tests -p "test_v12_streamlit_smoke.py" -v
       - run: python -m unittest discover -s tests -p "test_v11*.py" -v
