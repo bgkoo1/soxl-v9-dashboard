@@ -96,6 +96,24 @@ def record_sale(state,slot_id,*,quantity,exit_date,exit_price,exit_strategy,note
                    "quantity":str(sold),"exit_strategy":exit_strategy,"note":note})
     return {**state,"positions":validate_ledger(new_positions),"closed_trades":validate_closed_trades(trades)}
 
+def edit_sale_record(state,trade_id,*,exit_date,exit_price,exit_strategy,note=""):
+    """Correct real sell date/price/type without mutating sold share count."""
+    rows=validate_closed_trades(state.get("closed_trades",[]))
+    matches=[x for x in rows if x["id"]==trade_id]
+    if len(matches)!=1:
+        raise LedgerError("수정할 실제 매도 거래를 찾지 못했습니다.")
+    if exit_strategy not in REASONS:
+        raise LedgerError("허용되지 않은 매도 전략")
+    corrected=[]
+    for x in rows:
+        if x["id"]==trade_id:
+            corrected.append({**x,"exit_date":day(exit_date,"매도"),
+                 "exit_price":str(decimal(exit_price,"실제 매도가")),
+                 "exit_strategy":exit_strategy,"note":note})
+        else:
+            corrected.append(x)
+    return {**state,"closed_trades":validate_closed_trades(corrected)}
+
 def cancel_sale(state,trade_id):
     """Explicit sale reversal restores shares and removes exactly that fill."""
     trades=validate_closed_trades(state.get("closed_trades",[]))
