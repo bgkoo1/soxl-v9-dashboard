@@ -302,6 +302,8 @@ def render_v12_dashboard():
                 except Exception:
                     st.session_state["v12_recent_fx_quote"]=None
                     st.warning("USD/KRW 환율 조회 실패: 추정 NAV·매수 참고값은 표시하지 않습니다.")
+                # Refresh the restored top order cards on the same user action.
+                st.rerun()
             except MeritzAccountReadError as exc:
                 st.session_state.pop("v12_recent_broker_snapshot",None)
                 st.session_state.pop("v12_recent_broker_read_at",None)
