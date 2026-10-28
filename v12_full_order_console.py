@@ -12,6 +12,7 @@ from v12_order_center import entry_filter,_num
 from v12_portfolio_reconciliation import reconcile_portfolio
 from v12_manual_holdings import LedgerError
 from v12_trade_controls import render_trade_controls
+from v12_actual_exit_status import evaluate_actual_slot
 
 def _h(v):
     return escape(str(v),quote=True)
@@ -148,13 +149,19 @@ def render_v12_full_console(data,result,state,sha,error):
             for i,p in enumerate(sorted(lots,key=lambda x:x["entry_date"]),1):
                 q=Decimal(p["quantity"]);entry=Decimal(p["entry_price"])
                 target=entry*Decimal("1.032")
+                exit_status=evaluate_actual_slot(p,data)
                 rows.append({"슬롯":i,"매수일":p["entry_date"],"보유수량":str(q),
                              "매수가":_money(entry),"매수금액":_money(entry*q),
+                             "매수금액(원)":_money(q*entry*rate,"₩",0) if rate else "환율 확인",
                              "LOC 목표가":_money(target),"목표 매도금액":_money(target*q),
                              "현재 평가액":_money(q*px),
                              "목표 매도액(원)":_money(target*q*rate,"₩",0) if rate else "환율 확인",
-                             "상태":"실제 보유"})
+                             "D 경과":f"D{exit_status['elapsed']}",
+                             "상태":exit_status["status"]})
             st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
+            watch=[row for row in rows if ("MOC 검토" in row["상태"] or "기한 경과" in row["상태"])]
+            if watch:
+                st.warning(f"실제 보유 중인 슬롯 중 D2/D7 청산 검토 {len(watch)}건. 실제 매도 체결 전까지 보유수량은 변경되지 않습니다.")
         else:
             st.info("등록된 실제 보유 슬롯이 없습니다. 상세 주문에서 매수를 등록하거나 아래 가상 매도 취소 탭에서 복구하세요.")
         st.caption("실제 매수가 × 실제 보유수량으로 계산하며, 모델의 가상 매도 처리만으로 보유 슬롯을 삭제하지 않습니다.")
